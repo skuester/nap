@@ -32,7 +32,7 @@ private slots:
         QVERIFY(!p.playing());
         p.skip(5); QCOMPARE(p.position(), 7000);
         p.saveBookmark(); QCOMPARE(p.bookmark(), 7000);
-        QVERIFY(notices.last()[0].toString().contains("saved"));
+        QCOMPARE(notices.last()[0].toString(), QString("Bookmarked"));
         const QString renamed = directory.filePath("Renamed tape.wav");
         QVERIFY(QFile::rename(audio, renamed)); audio = renamed;
         p.openFile(audio, true);

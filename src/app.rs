@@ -53,7 +53,7 @@ impl App {
                     bookmark::write(path, n("position").max(0) as u64)?;
                 }
                 Ok(json!({"mark": if b("remove") { -1 } else { n("position").max(0) },
-                    "notice": if b("remove") { "Bookmark removed" } else { "Bookmark saved on this file" }}))
+                    "notice": if b("remove") { "Bookmark removed" } else { "Bookmarked" }}))
             }
             "seek" => Ok(json!({"position": seek(n("position"), n("duration"))})),
             "skip" => Ok(json!({"position": skip(n("position"), n("seconds"), n("duration"))})),
