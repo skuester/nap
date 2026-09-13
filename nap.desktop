@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=nap
+GenericName=Audio Player
+Comment=A little cassette deck for your desktop
+Exec=nap %f
+Icon=audio-x-generic
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+MimeType=audio/mpeg;audio/flac;audio/x-wav;audio/ogg;audio/opus;audio/mp4;audio/aac;audio/x-aiff;audio/x-ms-wma;
+StartupWMClass=nap
