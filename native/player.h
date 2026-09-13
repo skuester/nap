@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include "core.h"
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QAudioBufferOutput>
@@ -49,6 +50,7 @@ signals:
     void waveChanged();
     void notice(const QString &message);
 private:
+    Core core;
     QMediaPlayer media;
     QAudioOutput output;
     QAudioBufferOutput buffers;

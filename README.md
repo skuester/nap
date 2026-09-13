@@ -8,18 +8,18 @@ keyboard-first desktop as npr and nvp.
 
 ## Build and run
 
-Requires Linux, a C++17 compiler, Make, and Qt **6.8 or later** with Quick,
+Requires Linux, a Rust toolchain, a C++17 compiler, Make, pkg-config, and Qt **6.8 or later** with Quick,
 Quick Controls, Dialogs, and the FFmpeg Multimedia backend. On Arch the relevant
 Qt packages are `qt6-base`, `qt6-declarative`, `qt6-multimedia`, and
 `qt6-multimedia-ffmpeg`. Tests also use Python 3 and Qt Test.
 
 ```sh
 make -j4
-./build/nap                         # empty deck; open or drop a file
-./build/nap ~/Music/song.flac
-./build/nap --paused --time 1:02.5 song.mp3
-./build/nap --volume 40 --loop song.ogg
-./build/nap --ignore-bookmark song.wav
+./target/release/nap                         # empty deck; open or drop a file
+./target/release/nap ~/Music/song.flac
+./target/release/nap --paused --time 1:02.5 song.mp3
+./target/release/nap --volume 40 --loop song.ogg
+./target/release/nap --ignore-bookmark song.wav
 make test -j4
 ```
 
@@ -29,13 +29,26 @@ precedence over bookmarks. `--help` lists all options. Use `--` before a filenam
 that begins with a dash.
 
 ```sh
-make install                       # ~/.local/bin and desktop launcher
+make install                       # checkout links, Hyprland rules, audio defaults
 make uninstall
 ```
 
-Installation copies the self-contained executable and desktop entry. Re-run
-`make install` after rebuilding. `PREFIX` and `DESTDIR` are supported. Installation
-does not change MIME defaults or your window manager configuration.
+Like npr and nvp, installation symlinks the release binary and desktop entry
+into `~/.local`, and `hypr/nap.lua` into `~/.config/hypr`. Rebuilding updates the
+installed application immediately. `PREFIX` changes the binary/desktop-entry
+destination; this is a user installation, not a `DESTDIR` package-staging target.
+
+The installer backs up `hyprland.lua` and adds `require("hypr.nap")` once. It sets
+nap as the default for every type listed by `nap --mime-types`, recording the
+displaced handlers in `$XDG_STATE_HOME/nap/previous-audio-handlers.json` (normally
+`~/.local/state/nap`). Repeated installs keep this history; `make clean` leaves it
+intact. Uninstall removes the links and require line, restoring defaults only
+where nap is still selected. Manually edited rules are kept as a backup.
+
+`nap --install-hyprland [--link path/to/hypr/nap.lua]` and
+`nap --uninstall-hyprland` manage just the window rules. An active Hyprland session
+is reloaded and checked for configuration errors after installation/removal.
+The full installer requires an existing Hyprland Lua configuration and `xdg-mime`.
 
 ## The deck
 
@@ -81,16 +94,26 @@ nap reads `background`, `foreground`, and `accent` from the active theme's
 `$XDG_CONFIG_HOME/omarchy/current/theme` (with standard home-directory defaults).
 The label keeps its warm paper color. Restart nap after changing themes.
 
-The app ID is `nap`. An optional Lua rule for Hyprland 0.55+ is provided in
-[`hypr/nap.lua`](hypr/nap.lua), ready to add to your existing configuration if
-you want floating, centered windows. Tiled and resized windows scale the deck
-uniformly. No desktop settings are modified by the app.
+The app ID is `nap`. The installed [Hyprland 0.55+ Lua rules](hypr/nap.lua)
+float and center the window, preserve its 720:504 aspect ratio on resize, and
+disable dimming and Omarchy's default translucency. Tiling still works; the deck
+scales uniformly inside the available window. Ordinary playback does not modify
+desktop settings.
 
 ## Development
 
-The C++ core owns playback, decoded samples, bookmarks, and the theme. QML draws
-the cassette and routes input. All QML is embedded in the executable; there is no
-runtime dependency on this checkout or a browser.
+Rust owns CLI parsing, startup/seek/volume policy, file validation, bookmarks,
+theme loading, desktop installation, and MIME restoration. The C++ adapter in
+`native/` owns Qt Multimedia objects and forwards requests to the Rust core over
+a synchronous C ABI. QML draws the cassette and routes input. The Qt adapter and
+QML resources are embedded in the Rust executable by `build.rs`; there is no
+runtime dependency on a separate helper process, Quickshell, or a browser.
+
+`cargo test --locked` runs Rust unit/integration tests for the core and installer.
+`make check` runs those plus Qt/CLI tests, `cargo fmt --all --check`, and
+`cargo clippy --all-targets --locked -- -D warnings`, following the siblings.
+Installer tests use temporary configurations and a fake MIME backend, never
+your desktop preferences.
 
 `make test` generates a silent-output test tone in a temporary directory, checks
 real decoding and nonzero waveform samples, playback, seeks, rename-safe bookmark
@@ -103,7 +126,7 @@ For a preview without displaying a window:
 ```sh
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic \
 QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
-./build/nap --screenshot /tmp/nap.png
+./target/release/nap --screenshot /tmp/nap.png
 ```
 
 The waveform uses Qt's [QAudioBufferOutput](https://doc.qt.io/qt-6/qaudiobufferoutput.html),

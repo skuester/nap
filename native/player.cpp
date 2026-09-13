@@ -1,14 +1,7 @@
 #include "player.h"
 #include <QAudioBuffer>
 #include <QFileInfo>
-#include <QFile>
-#include <QDir>
 #include <QMediaMetaData>
-#include <QRegularExpression>
-#include <sys/xattr.h>
-#include <cerrno>
-#include <cstring>
-#include <cmath>
 
 Player::Player(QObject *parent) : QObject(parent) {
     media.setAudioOutput(&output);
@@ -60,21 +53,17 @@ QString Player::detail() const {
     return bits.join("  ·  ");
 }
 void Player::openFile(const QString &file, bool paused, qint64 start, bool ignore) {
-    QFileInfo info(file);
-    if (!info.isFile() || !info.isReadable()) { emit notice("Cannot open this file"); return; }
+    const auto result = core.request({{"op", "open"}, {"path", file}, {"start", start}, {"ignore", ignore}});
+    if (result.contains("error")) { emit notice(result["error"].toString()); return; }
     media.stop();
-    // Reopening the same file must still apply the requested start policy.
     media.setSource(QUrl());
-    path = info.canonicalFilePath();
-    mark = -1;
-    char value[64];
-    const auto n = getxattr(QFile::encodeName(path).constData(), "user.nap.bookmark", value, sizeof(value));
-    if (n > 0) { bool ok; auto v = QByteArray(value, n).toLongLong(&ok); if (ok && v >= 0) mark = v; }
-    pending = start >= 0 ? start : (!ignore ? mark : -1);
+    path = result["path"].toString();
+    mark = result["mark"].toInteger(-1);
+    pending = result["pending"].toInteger(-1);
     startPaused = paused;
     media.setSource(QUrl::fromLocalFile(path));
     emit changed();
-    if (start < 0 && !ignore && mark >= 0) emit notice("Opened at your bookmark");
+    if (!result["notice"].toString().isEmpty()) emit notice(result["notice"].toString());
 }
 void Player::openUrl(const QUrl &url) {
     if (url.isLocalFile()) openFile(url.toLocalFile());
@@ -82,35 +71,18 @@ void Player::openUrl(const QUrl &url) {
 }
 void Player::toggle() { if (loaded()) { if (playing()) media.pause(); else media.play(); } }
 void Player::stop() { media.stop(); media.setPosition(0); }
-void Player::seek(qint64 ms) { if (media.isSeekable()) media.setPosition(qBound(qint64(0), ms, duration())); }
-void Player::skip(int seconds) { seek(position() + qint64(seconds) * 1000); }
-void Player::setVolume(double v) { output.setVolume(qBound(0.0, v, 1.0)); emit changed(); }
+void Player::seek(qint64 ms) { if (media.isSeekable()) media.setPosition(core.request({{"op", "seek"}, {"position", ms}, {"duration", duration()}})["position"].toInteger()); }
+void Player::skip(int seconds) { seek(core.request({{"op", "skip"}, {"position", position()}, {"seconds", seconds}, {"duration", duration()}})["position"].toInteger()); }
+void Player::setVolume(double v) { output.setVolume(core.request({{"op", "volume"}, {"volume", v}})["volume"].toDouble()); emit changed(); }
 void Player::toggleMute() { output.setMuted(!muted()); emit changed(); }
 void Player::toggleLoop() { media.setLoops(looping() ? 1 : QMediaPlayer::Infinite); emit changed(); }
 void Player::saveBookmark(bool remove) {
     if (!loaded()) return;
-    const auto name = QFile::encodeName(path);
-    const auto value = QByteArray::number(position());
-    const int result = remove ? removexattr(name.constData(), "user.nap.bookmark")
-                              : setxattr(name.constData(), "user.nap.bookmark", value.constData(), value.size(), 0);
-    if (result < 0 && !(remove && errno == ENODATA)) {
-        emit notice("Bookmark failed: " + QString::fromLocal8Bit(strerror(errno))); return;
-    }
-    mark = remove ? -1 : position(); emit changed();
-    emit notice(remove ? "Bookmark removed" : "Bookmark saved on this file");
+    const auto result = core.request({{"op", "bookmark"}, {"position", position()}, {"remove", remove}});
+    if (result.contains("error")) { emit notice("Bookmark failed: " + result["error"].toString()); return; }
+    mark = result["mark"].toInteger(-1); emit changed();
+    emit notice(result["notice"].toString());
 }
 QVariantMap Player::palette() const {
-    QVariantMap colors{{"background", "#191d20"}, {"foreground", "#e1dfd5"}, {"accent", "#d5ad73"}};
-    const QString home = QDir::homePath();
-    const QStringList roots{qEnvironmentVariable("XDG_STATE_HOME", home + "/.local/state"), qEnvironmentVariable("XDG_CONFIG_HOME", home + "/.config")};
-    for (const auto &root : roots) {
-        QFile f(root + "/omarchy/current/theme/colors.toml");
-        if (!f.open(QFile::ReadOnly)) continue;
-        const QRegularExpression re("^\\s*(background|foreground|accent)\\s*=\\s*\"(#[0-9a-fA-F]{6})\"");
-        for (const auto &line : QString::fromUtf8(f.readAll()).split('\n')) {
-            auto match = re.match(line); if (match.hasMatch()) colors[match.captured(1)] = match.captured(2);
-        }
-        break;
-    }
-    return colors;
+    return core.request({{"op", "theme"}}).toVariantMap();
 }

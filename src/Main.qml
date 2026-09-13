@@ -6,7 +6,7 @@ import QtQuick.Window
 ApplicationWindow {
     id: win
     width: 720; height: 504
-    minimumWidth: 480; minimumHeight: 440
+    minimumWidth: 480; minimumHeight: 336
     visible: true
     title: deck.loaded ? deck.filename + " — nap" : "nap — Nice Audio Player"
     color: bg
@@ -215,6 +215,7 @@ ApplicationWindow {
         MouseArea { anchors.fill: parent; onClicked: win.helpVisible = false }
         Column {
             anchors.centerIn: parent; width: Math.min(420, parent.width - 48); spacing: 16
+            scale: Math.min(1, (parent.height - 32) / implicitHeight)
             Text { text: "A little deck. A few good keys."; font.pixelSize: 22; color: fg }
             Repeater {
                 model: [["Space", "Play / pause"], ["← / →", "Back / forward five seconds"], ["↑ / ↓ · M", "Volume / mute"], ["S · L", "Stop / toggle loop"], ["B · Shift+B", "Save / remove bookmark"], ["Enter", "Return to bookmark"], ["O · Ctrl+O", "Open a file"], ["? · K · Esc", "Help / close help"], ["Q", "Quit"]]

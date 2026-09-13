@@ -1,5 +1,5 @@
 #include <QtTest>
-#include "../src/player.h"
+#include "../native/player.h"
 #include <QTemporaryDir>
 #include <QFile>
 #include <QDataStream>
@@ -99,7 +99,10 @@ private slots:
         p.toggle(); QTest::qWait(120);
         QVERIFY(w->grabWindow().save("build/playing-preview.png"));
         p.stop();
-        w->resize(480, 440); QTest::qWait(100);
+        w->resize(480, 336); QTest::qWait(100);
+        QVERIFY(!w->grabWindow().isNull());
+        QCOMPARE(w->minimumWidth() * 504, w->minimumHeight() * 720);
+        QTest::keyClick(w, Qt::Key_K);
         QVERIFY(!w->grabWindow().isNull());
         QCOMPARE(warnings.count(), 0);
     }

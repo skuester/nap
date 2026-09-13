@@ -1,0 +1,101 @@
+use nap::{
+    app::{self, App},
+    bookmark,
+    cli::{self, Action},
+    theme::{Rgb, Theme, colors_toml_path},
+};
+use serde_json::json;
+use std::{ffi::OsString, fs};
+
+fn parse(args: &[&str]) -> Result<Action, String> {
+    cli::parse(args.iter().map(OsString::from))
+}
+
+#[test]
+fn timestamps_and_invalid_values() {
+    for (text, value) in [("90", 90000), ("1:02.5", 62500), ("1:02:03", 3723000), ("0", 0)] {
+        assert_eq!(cli::timestamp(text), Some(value));
+    }
+    for text in ["", "-1", "nan", "inf", "1:60", "1.5:00", "1::2", "1:2:3:4", "10000000000000"] {
+        assert_eq!(cli::timestamp(text), None, "{text}");
+    }
+}
+#[test]
+fn cli_aliases_and_literal_files() {
+    for key in ["--time", "--timestamp", "--start"] {
+        let Action::Run(o) = parse(&[key, "1:02.5", "--paused", "--volume=40", "--", "-song.wav"]).unwrap() else {
+            panic!()
+        };
+        assert_eq!(o.start, 62500);
+        assert!(o.paused);
+        assert_eq!(o.volume, 0.4);
+        assert_eq!(o.path.unwrap().to_str(), Some("-song.wav"));
+    }
+    assert!(matches!(parse(&["--install-hyprland", "--link", "hypr/nap.lua"]).unwrap(), Action::Install(Some(_))));
+    for args in [
+        &["--time"][..],
+        &["--volume", "NaN"],
+        &["a", "b"],
+        &["--link", "a"],
+        &["--install-hyprland", "--uninstall-hyprland"],
+        &["--bogus"],
+    ] {
+        assert!(parse(args).is_err());
+    }
+}
+#[test]
+fn transport_policy_bounds_and_precedence() {
+    assert_eq!(app::seek(-100, 12000), 0);
+    assert_eq!(app::seek(20000, 12000), 12000);
+    assert_eq!(app::skip(500, -5, 12000), 0);
+    assert_eq!(app::skip(500, i64::MAX, 12000), 12000);
+    assert_eq!(app::volume(-1.0), 0.0);
+    assert_eq!(app::volume(2.0), 1.0);
+    assert_eq!(app::volume(f64::NAN), 0.0);
+    assert_eq!(app::start_position(0, 7000, false), 0);
+    assert_eq!(app::start_position(-1, 7000, false), 7000);
+    assert_eq!(app::start_position(-1, 7000, true), -1);
+}
+#[test]
+fn bookmark_roundtrip_rename_and_start_policy() {
+    let temp = tempfile::tempdir().unwrap();
+    let first = temp.path().join("first.wav");
+    fs::write(&first, "audio").unwrap();
+    let mut app = App::default();
+    assert_eq!(app.dispatch(&json!({"op":"open", "path": first})).unwrap()["mark"], -1);
+    app.dispatch(&json!({"op":"bookmark", "position":7000})).unwrap();
+    let renamed = temp.path().join("renamed.wav");
+    fs::rename(first, &renamed).unwrap();
+    assert_eq!(bookmark::read(&renamed).unwrap(), Some(7000));
+    assert_eq!(app.dispatch(&json!({"op":"open", "path":renamed})).unwrap()["pending"], 7000);
+    assert_eq!(app.dispatch(&json!({"op":"open", "path":renamed,"start":1000})).unwrap()["pending"], 1000);
+    assert_eq!(app.dispatch(&json!({"op":"open", "path":renamed,"ignore":true})).unwrap()["pending"], -1);
+    app.dispatch(&json!({"op":"bookmark", "remove":true})).unwrap();
+    app.dispatch(&json!({"op":"bookmark", "remove":true})).unwrap();
+    assert_eq!(bookmark::read(&renamed).unwrap(), None);
+    assert!(app.dispatch(&json!({"op":"open", "path":temp.path()})).is_err());
+    assert!(app.dispatch(&json!({"op":"open", "path":temp.path().join("missing")})).is_err());
+    assert!(app.dispatch(&json!({"op":"invalid"})).is_err());
+}
+#[test]
+fn corrupt_bookmarks_are_ignored() {
+    for value in [b"nope".as_slice(), b"-1", b"18446744073709551616"] {
+        assert_eq!(bookmark::decode(value), None);
+    }
+}
+#[test]
+fn theme_validates_colors_and_prefers_state_directory() {
+    assert!(Rgb::parse("#abcdzz").is_none());
+    assert!(Rgb::parse("#fff").is_none());
+    let t = Theme::parse("background = \"#123456\"\naccent = \"bad\"\n");
+    assert_eq!(t.background.to_css(), "#123456");
+    assert_eq!(t.accent, Theme::default().accent);
+    let temp = tempfile::tempdir().unwrap();
+    let state = temp.path().join("state");
+    let config = temp.path().join("config");
+    for root in [&state, &config] {
+        fs::create_dir_all(root.join("omarchy/current/theme")).unwrap();
+        fs::write(root.join("omarchy/current/theme/colors.toml"), "").unwrap();
+    }
+    assert_eq!(colors_toml_path(Some(&state), Some(&config)), Some(state.join("omarchy/current/theme/colors.toml")));
+}
