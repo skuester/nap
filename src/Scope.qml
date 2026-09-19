@@ -79,10 +79,10 @@ Rectangle {
             const p = [], h = [], l = []
             for (let i = 0; i < 2; i++) {
                 const target = playing ? (levels[2 + i] || 0) : 0
-                // Peak meters jump up at once and fall back at about 20 dB a second; the top segment lingers.
-                p[i] = Math.max(target, peaks[i] - 0.45 * dt)
+                // The ladders jump up at once and fall back at about 22 dB a second; the top segment lingers.
+                p[i] = Math.max(target, peaks[i] - 0.6 * dt)
                 h[i] = holds[i]; l[i] = linger[i]
-                if (p[i] >= h[i]) { h[i] = p[i]; l[i] = 1 }
+                if (p[i] >= h[i]) { h[i] = p[i]; l[i] = 0.6 }
                 else if (l[i] > 0) l[i] -= dt
                 else h[i] = Math.max(p[i], h[i] - 0.7 * dt)
                 busy = busy || h[i] > 0.001
@@ -228,17 +228,17 @@ Rectangle {
                         required property int index
                         readonly property bool on: index < ladder.lit || (ladder.held > 0 && index === ladder.held - 1)
                         x: 11 + index * 6; width: 5; height: 10
-                        color: !on ? Qt.alpha(scope.fg, 0.07) : index >= panel.segments - 4 ? scope.fg : index < 12 ? Qt.tint(scope.color, Qt.alpha(scope.glow, 0.55)) : scope.glow
+                        color: !on ? Qt.alpha(scope.fg, 0.07) : index >= panel.segments - 5 ? scope.fg : index < 12 ? Qt.tint(scope.color, Qt.alpha(scope.glow, 0.55)) : scope.glow
                     }
                 }
             }
         }
         Repeater {
-            model: [40, 30, 20, 10, 6, 3, 0]
+            model: [-20, -10, -5, 0, 3, 6]
             Text {
                 required property int modelData
-                x: 11 + (45 - modelData) / 45 * 180 - width; y: 12.5
-                text: modelData; font.family: scope.mono; font.pixelSize: 7; color: Qt.alpha(scope.fg, 0.5)
+                x: 11 + (modelData + 30) / 36 * 180 - width; y: 12.5
+                text: Math.abs(modelData); font.family: scope.mono; font.pixelSize: 7; color: Qt.alpha(scope.fg, 0.5)
             }
         }
         component Wheel: Rectangle {

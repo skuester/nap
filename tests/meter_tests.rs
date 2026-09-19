@@ -27,11 +27,13 @@ fn vu_reads_zero_at_the_reference_level() {
     assert_eq!(meter::vu(&[]), 0.0);
     assert_eq!(meter::vu(&[0.0; 512]), 0.0);
     assert_eq!(meter::vu(&[1.0; 512]), 1.08);
-    // Peaks read sample height, not loudness: full scale tops the ladder, -22.5 dBFS is halfway up.
-    assert_eq!(meter::peak(&[0.0, -1.0, 0.2]), 1.0);
-    assert!((meter::peak(&sine(440.0, 10f32.powf(-22.5 / 20.0), 48000, 4800)) - 0.5).abs() < 0.01);
-    assert_eq!(meter::peak(&[]), 0.0);
-    assert_eq!(meter::peak(&[0.001; 64]), 0.0);
+    // The ladder runs -30..+6 dB around -5 dBFS: a sine peaking there reads 0 dB, 30/36 of the way up.
+    let zero = 10f32.powf(-5.0 / 20.0);
+    assert!((meter::ladder(&sine(440.0, zero, 48000, 4800)) - 30.0 / 36.0).abs() < 0.005);
+    assert!((meter::ladder(&sine(440.0, zero / 10.0, 48000, 4800)) - 10.0 / 36.0).abs() < 0.005);
+    assert_eq!(meter::ladder(&[1.0; 512]), 1.0);
+    assert_eq!(meter::ladder(&[]), 0.0);
+    assert_eq!(meter::ladder(&[0.001; 64]), 0.0);
 }
 
 #[test]

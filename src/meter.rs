@@ -1,5 +1,5 @@
 //! Signal analysis for the visualizers: a log-spaced spectrum for the analyzer and spectrogram, VU
-//! needle deflection, and sample peaks for the level ladder. Pure functions over decoded samples; smoothing and ballistics
+//! needle deflection, and programme level for the ladders. Pure functions over decoded samples; smoothing and ballistics
 //! belong to the interface.
 
 use std::f32::consts::PI;
@@ -15,8 +15,11 @@ const TILT_DB_PER_OCTAVE: f32 = 3.0;
 /// A steady tone at this RMS level (dBFS) reads 0 VU, which suits mastered music.
 const VU_REFERENCE_DB: f32 = -10.0;
 const LARGEST_WINDOW: usize = 2048;
-/// The peak ladder's bottom segment, in dBFS; its top segment is full scale.
-const PEAK_FLOOR_DB: f32 = -45.0;
+/// The level ladder reads like a deck's programme meter: 0 dB is this level (dBFS, sine-equivalent),
+/// which is where mastered music spends its time, on a scale from -30 to +6.
+const LADDER_REFERENCE_DB: f32 = -5.0;
+const LADDER_FLOOR_DB: f32 = -30.0;
+const LADDER_CEILING_DB: f32 = 6.0;
 
 /// In-place radix-2 FFT; `re.len()` must be a power of two.
 fn fft(re: &mut [f32], im: &mut [f32]) {
@@ -84,13 +87,19 @@ pub fn vu(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return 0.0;
     }
-    let rms = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt();
+    let rms = rms(samples);
     let reference = 10f32.powf(VU_REFERENCE_DB / 20.0);
     (rms / reference / 10f32.powf(3.0 / 20.0)).clamp(0.0, 1.08)
 }
 
-/// The loudest sample as a fraction of the peak ladder: 0 at -45 dBFS or below, 1 at full scale.
-pub fn peak(samples: &[f32]) -> f32 {
-    let loudest = samples.iter().fold(0f32, |max, s| max.max(s.abs()));
-    ((20.0 * loudest.max(1e-9).log10() - PEAK_FLOOR_DB) / -PEAK_FLOOR_DB).clamp(0.0, 1.0)
+fn rms(samples: &[f32]) -> f32 {
+    (samples.iter().map(|s| s * s).sum::<f32>() / samples.len().max(1) as f32).sqrt()
+}
+
+/// How far up the level ladder these samples reach, 0..=1. Sample peaks sit near full scale all
+/// through a modern master, so the ladder follows short-term level instead: RMS plus 3 dB, which
+/// reads a sine at its peak.
+pub fn ladder(samples: &[f32]) -> f32 {
+    let db = 20.0 * rms(samples).max(1e-9).log10() + 3.0 - LADDER_REFERENCE_DB;
+    ((db - LADDER_FLOOR_DB) / (LADDER_CEILING_DB - LADDER_FLOOR_DB)).clamp(0.0, 1.0)
 }

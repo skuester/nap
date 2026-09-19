@@ -59,7 +59,7 @@ private slots:
         for (int i = 0; i < 24; ++i) if (p.spectrum()[i].toDouble() > p.spectrum()[loudest].toDouble()) loudest = i;
         QCOMPARE(loudest, 9);
         QCOMPARE(p.levels().size(), 4);
-        QVERIFY(std::abs(p.levels()[2].toDouble() - (45 - 12.25) / 45) < 0.02);
+        QVERIFY(std::abs(p.levels()[2].toDouble() - (30 - 7.25) / 36) < 0.02);
         QVERIFY(std::abs(p.levels()[0].toDouble() - 0.39) < 0.03);
         QCOMPARE(p.levels()[0], p.levels()[1]);
         p.toggle(); QVERIFY(!p.playing()); QVERIFY(p.wave().isEmpty()); QVERIFY(p.spectrum().isEmpty());

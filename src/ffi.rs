@@ -32,7 +32,7 @@ pub unsafe extern "C" fn nap_core_request(core: *mut App, request: *const c_char
 }
 
 /// Analyze one buffer for the visualizers: `bands` spectrum bars from the channel mix, and into
-/// `levels` the left and right VU deflections followed by the left and right sample peaks. Hot path, so it bypasses the JSON boundary.
+/// `levels` the left and right VU deflections followed by the left and right ladder levels. Hot path, so it bypasses the JSON boundary.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nap_analyze(
     left: *const f32,
@@ -59,8 +59,8 @@ pub unsafe extern "C" fn nap_analyze(
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mix: Vec<f32> = left.iter().zip(right).map(|(l, r)| (l + r) / 2.0).collect();
         bands.copy_from_slice(&crate::meter::spectrum(&mix, rate, band_count));
-        use crate::meter::{peak, vu};
-        levels.copy_from_slice(&[vu(left), vu(right), peak(left), peak(right)]);
+        use crate::meter::{ladder, vu};
+        levels.copy_from_slice(&[vu(left), vu(right), ladder(left), ladder(right)]);
     }));
 }
 

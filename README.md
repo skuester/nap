@@ -73,7 +73,7 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
   `$XDG_STATE_HOME/nap/visualizer`:
   - *bars* (the default): a 24-band spectrum analyzer in shaded cells, with caps that hang and then fall.
   - *vu*: a pair of needle VU meters with real meter ballistics; 0 VU is -10 dBFS RMS.
-  - *peak*: a deck's front panel, with segmented peak ladders (dBFS, with peak hold) over a
+  - *peak*: a deck's front panel, with segmented level ladders (-30 to +6 dB around -5 dBFS, with peak hold) over a
     mechanical tape counter whose wheels roll with the elapsed time and whirr when you seek.
   - *spectrogram*: the last few seconds of spectrum scrolling past in shaded cells, bass at the
     bottom; pausing holds the picture.
