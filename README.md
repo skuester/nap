@@ -22,13 +22,13 @@ Qt packages are `qt6-base`, `qt6-declarative`, `qt6-multimedia`, and
 `qt6-multimedia-ffmpeg`. Tests also use Python 3 and Qt Test.
 
 ```sh
-make -j4
+make
 ./target/release/nap                         # empty deck; open or drop a file
 ./target/release/nap ~/Music/song.flac
 ./target/release/nap --paused --time 1:02.5 song.mp3
 ./target/release/nap --volume 40 --loop song.ogg
 ./target/release/nap --ignore-bookmark song.wav
-make test -j4
+make test
 ```
 
 `--time` also accepts `--start` and `--timestamp`; values can be seconds,

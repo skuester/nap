@@ -19,10 +19,10 @@ nap is a Linux audio player built with Rust 2024, C++17, and Qt 6.8+.
 
 Install Rust, a C++17 compiler, Make, pkg-config, Qt 6.8+ Quick/Controls/Dialogs/Multimedia with the FFmpeg backend, Qt Test, and Python 3.
 
-- `make -j4`: build the release executable.
+- `make`: build the release executable (cargo parallelizes on its own; `-j` adds nothing here).
 - `./target/release/nap song.flac`: run locally.
 - `cargo test --locked`: run Rust tests.
-- `make test -j4`: run Rust, Qt, and Python tests; render `build/preview.png`.
+- `make test -j4`: run Rust, Qt, and Python tests; render `build/preview.png`. `-j` only speeds the Qt test's C++ compile.
 - `make check`: run all tests, formatting checks, and Clippy with warnings treated as errors.
 - `cargo fmt --all`: format Rust code.
 
