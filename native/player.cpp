@@ -163,7 +163,6 @@ void Player::edit(QJsonObject request) {
 }
 void Player::moveTrack(int from, int to) { edit({{"op", "edit"}, {"action", "move"}, {"from", from}, {"to", to}}); }
 void Player::removeTrack(int index) { edit({{"op", "edit"}, {"action", "remove"}, {"index", index}}); }
-void Player::renameTape(const QString &name) { edit({{"op", "edit"}, {"action", "name"}, {"name", name}}); }
 void Player::setCover(const QUrl &image) { edit({{"op", "edit"}, {"action", "cover"}, {"path", image.toLocalFile()}}); }
 void Player::exportTape(const QUrl &destination) {
     const auto result = core.request({{"op", "export"}, {"dest", destination.toLocalFile()}});

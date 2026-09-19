@@ -34,11 +34,20 @@ fn the_index_is_plain_m3u_text() {
             .into();
     assert_eq!(tape.tracks, tracks);
 
-    let written =
-        tape::render("Summer\n'98", Some("_cover.jpg"), &["01 Roygbiv.flac".into(), "02 Don't Stop.mp3".into()]);
-    assert_eq!(written, "#EXTM3U\n#PLAYLIST:Summer '98\n#EXTIMG:_cover.jpg\n\n01 Roygbiv.flac\n02 Don't Stop.mp3\n");
-    assert_eq!(tape::render("  ", None, &[]), "#EXTM3U\n\n");
-    assert_eq!(tape::parse(&written, Path::new("/t")).name, "Summer '98");
+    let signed = Tape {
+        name: "Summer\n'98".into(),
+        from: " Shane ".into(),
+        note: "For the drive up.\n\nSide B is the good one.\n".into(),
+        ..Tape::default()
+    };
+    let written = tape::render(&signed, Some("_cover.jpg"), &["01 Roygbiv.flac".into(), "02 Don't Stop.mp3".into()]);
+    let expected = "#EXTM3U\n#PLAYLIST:Summer '98\n#EXTIMG:_cover.jpg\n#FROM:Shane\n#NOTE:For the drive up.\n#NOTE:\n#NOTE:Side B is the good one.\n\n01 Roygbiv.flac\n02 Don't Stop.mp3\n";
+    assert_eq!(written, expected);
+    assert_eq!(tape::render(&Tape { name: "  ".into(), ..Tape::default() }, None, &[]), "#EXTM3U\n\n");
+    let read = tape::parse(&written, Path::new("/t"));
+    let words = (read.name.as_str(), read.from.as_str(), read.note.as_str());
+    assert_eq!(words, ("Summer '98", "Shane", "For the drive up.\n\nSide B is the good one."));
+    assert_eq!(read.tracks.len(), 2, "a signature and a note are not tracks");
 }
 
 #[test]
@@ -69,7 +78,12 @@ fn a_tape_survives_export_and_extraction() {
     let second = copy(temp.path(), "silence.mp3", "two/intro.flac");
     let cover = temp.path().join("art.PNG");
     fs::write(&cover, b"\x89PNG stand-in").unwrap();
-    let tape = Tape { name: "Summer '98".into(), cover: Some(cover), tracks: vec![first.clone(), second, first] };
+    let tape = Tape {
+        name: "Summer '98".into(),
+        cover: Some(cover),
+        tracks: vec![first.clone(), second, first],
+        ..Tape::default()
+    };
     let dest = temp.path().join("Summer.tape");
     let done = AtomicU64::new(0);
     tape::export(&tape, &dest, &done).unwrap();
@@ -99,7 +113,7 @@ fn a_tape_survives_export_and_extraction() {
 fn a_standalone_jcard_points_at_files_where_they_are() {
     let temp = tempfile::tempdir().unwrap();
     let track = copy(temp.path(), "silence.ogg", "music/far away.ogg");
-    let tape = Tape { name: String::new(), cover: None, tracks: vec![track.clone()] };
+    let tape = Tape { tracks: vec![track.clone()], ..Tape::default() };
     let dest = temp.path().join("mix.jcard");
     tape::export(&tape, &dest, &AtomicU64::new(0)).unwrap();
     assert_eq!(fs::read_to_string(&dest).unwrap(), format!("#EXTM3U\n\n{}\n", track.display()));
@@ -118,7 +132,7 @@ fn a_standalone_jcard_points_at_files_where_they_are() {
 #[test]
 fn a_failed_export_leaves_nothing_behind() {
     let temp = tempfile::tempdir().unwrap();
-    let tape = Tape { name: "Lost".into(), cover: None, tracks: vec![temp.path().join("missing.flac")] };
+    let tape = Tape { name: "Lost".into(), tracks: vec![temp.path().join("missing.flac")], ..Tape::default() };
     let dest = temp.path().join("Lost.tape");
     assert!(tape::export(&tape, &dest, &AtomicU64::new(0)).unwrap_err().contains("missing.flac"));
     assert!(!dest.exists() && !temp.path().join("Lost.tape.partial").exists());
@@ -219,7 +233,9 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
     assert_eq!(ask(&mut app, json!({"op":"insert", "index": 0}))["file"][0][1], "Ogg Vorbis");
 
     ask(&mut app, json!({"op":"load", "append": true, "paths": [temp.path().join("b.mp3")]}));
-    ask(&mut app, json!({"op":"edit", "action":"name", "name": "  Summer '98 "}));
+    ask(&mut app, json!({"op":"edit", "action":"name", "text": "  Summer '98 "}));
+    ask(&mut app, json!({"op":"edit", "action":"from", "text": "Shane"}));
+    ask(&mut app, json!({"op":"edit", "action":"note", "text": "For the drive up.\nSide B is the good one.\n"}));
     assert!(app.dispatch(&json!({"op":"edit", "action":"cover", "path": temp.path().join("c.ogg")})).is_err());
     fs::write(temp.path().join("art.png"), "stand-in").unwrap();
     ask(&mut app, json!({"op":"edit", "action":"cover", "path": temp.path().join("art.png")}));
@@ -250,6 +266,8 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
     assert_eq!(finish(&mut app)["loaded"], true);
     let tape = ask(&mut app, json!({"op":"tape"}));
     assert_eq!((tape["name"].as_str(), files(&tape)), (Some("Summer '98"), vec!["c.ogg", "b.mp3"]));
+    let words = (tape["from"].as_str(), tape["note"].as_str());
+    assert_eq!(words, (Some("Shane"), Some("For the drive up.\nSide B is the good one.")));
     let scratch =
         PathBuf::from(tape["tracks"][0]["path"].as_str().unwrap()).parent().unwrap().parent().unwrap().to_owned();
     assert!(scratch.starts_with(tape::scratch_root()) && scratch.is_dir());

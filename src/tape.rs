@@ -11,10 +11,16 @@
 //! #EXTM3U
 //! #PLAYLIST:Summer '98
 //! #EXTIMG:_cover.jpg
+//! #FROM:Shane
+//! #NOTE:Made this for the drive up.
+//! #NOTE:Side B is the good one.
 //!
 //! 01 Roygbiv.flac
 //! 02 Don't Stop.mp3
 //! ```
+//!
+//! `#FROM:` and `#NOTE:` are nap's own: who made the tape, and what they wrote to go with it, one
+//! `#NOTE:` per line. M3U has no such fields, and other players skip `#` lines they do not know.
 
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -31,6 +37,10 @@ const IMAGES: [&str; 6] = ["png", "jpg", "jpeg", "webp", "gif", "bmp"];
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Tape {
     pub name: String,
+    /// Who made it, as they signed it.
+    pub from: String,
+    /// What they wrote to go with it; may run to several lines.
+    pub note: String,
     pub cover: Option<PathBuf>,
     pub tracks: Vec<PathBuf>,
 }
@@ -67,6 +77,10 @@ pub fn parse(text: &str, base: &Path) -> Tape {
             tape.name = name.trim().to_owned();
         } else if let Some(cover) = line.strip_prefix("#EXTIMG:") {
             tape.cover = Some(base.join(cover.trim()));
+        } else if let Some(from) = line.strip_prefix("#FROM:") {
+            tape.from = from.trim().to_owned();
+        } else if let Some(note) = line.strip_prefix("#NOTE:") {
+            tape.note = format!("{}\n{}", tape.note, note.trim()).trim_start_matches('\n').to_owned();
         } else if !line.starts_with('#') {
             tape.tracks.push(base.join(line));
         }
@@ -74,15 +88,23 @@ pub fn parse(text: &str, base: &Path) -> Tape {
     tape
 }
 
-/// Write an index listing `entries`, one per track, with `cover` as it should appear in the file.
-pub fn render(name: &str, cover: Option<&str>, entries: &[String]) -> String {
+fn one_line(text: &str) -> String {
+    text.replace(['\n', '\r'], " ").trim().to_owned()
+}
+
+/// Write `tape`'s index listing `entries`, one per track, with `cover` as it should appear in the file.
+pub fn render(tape: &Tape, cover: Option<&str>, entries: &[String]) -> String {
     let mut text = String::from("#EXTM3U\n");
-    let name = name.replace(['\n', '\r'], " ");
-    if !name.trim().is_empty() {
-        text += &format!("#PLAYLIST:{}\n", name.trim());
+    let headed = [
+        ("#PLAYLIST:", one_line(&tape.name)),
+        ("#EXTIMG:", cover.unwrap_or_default().to_owned()),
+        ("#FROM:", one_line(&tape.from)),
+    ];
+    for (directive, value) in headed.iter().filter(|(_, value)| !value.is_empty()) {
+        text += &format!("{directive}{value}\n");
     }
-    if let Some(cover) = cover {
-        text += &format!("#EXTIMG:{cover}\n");
+    for line in tape.note.trim().lines().filter(|_| !tape.note.trim().is_empty()) {
+        text += &format!("#NOTE:{}\n", line.trim_end());
     }
     text.push('\n');
     for entry in entries {
@@ -165,7 +187,7 @@ fn write_archive(tape: &Tape, partial: &Path, folder: &Path, done: &AtomicU64) -
     let mut tar = tar::Builder::new(File::create(partial).map_err(|e| describe(partial, e))?);
     let names = archive_names(&tape.tracks);
     let cover = tape.cover.as_deref().map(cover_name);
-    let index = render(&tape.name, cover.as_deref(), &names);
+    let index = render(tape, cover.as_deref(), &names);
     append_text(&mut tar, &folder.join(INDEX), &index).map_err(|e| describe(partial, e))?;
     if let (Some(source), Some(name)) = (&tape.cover, &cover) {
         append_file(&mut tar, &folder.join(name), source, done)?;
@@ -182,7 +204,7 @@ fn write_archive(tape: &Tape, partial: &Path, folder: &Path, done: &AtomicU64) -
 fn export_index(tape: &Tape, dest: &Path) -> Result<(), String> {
     let absolute = |path: &PathBuf| path.to_string_lossy().into_owned();
     let entries: Vec<String> = tape.tracks.iter().map(absolute).collect();
-    let text = render(&tape.name, tape.cover.as_ref().map(absolute).as_deref(), &entries);
+    let text = render(tape, tape.cover.as_ref().map(absolute).as_deref(), &entries);
     fs::write(dest, text).map_err(|e| describe(dest, e))
 }
 

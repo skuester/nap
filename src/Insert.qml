@@ -18,12 +18,19 @@ Item {
     property var tape: ({})
     property int selected: -1
     property bool typing: false
+    property var writing: null
     signal dismissed()
     signal folderRequested()
     signal filesDropped(var urls)
     signal tapeDropped(var urls)
     signal coverDropped(url image)
     signal renamed(string name)
+    signal signed(string from)
+    signal noted(string note)
+    // The cover, lifted off the card for a closer look. It never lands quite straight.
+    property bool zoomed: false
+    property real tilt: 0
+    function zoom() { tilt = (1 + Math.random() * 1.6) * (Math.random() < 0.5 ? -1 : 1); zoomed = true }
     signal playRequested(int index)
     signal moveRequested(int from, int to)
     signal removeRequested(int index)
@@ -38,7 +45,7 @@ Item {
     readonly property string summary: tracks.length + (tracks.length === 1 ? " track, " : " tracks, ") + Math.max(1, Math.round((tape.seconds || 0) / 60)) + " min"
     readonly property string spineNote: mixtape ? summary : card.artist || ""
     function minutes(seconds) { return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0") }
-    onOpenChanged: if (!open) { selected = -1; typing = false }
+    onOpenChanged: if (!open) { selected = -1; typing = false; zoomed = false }
     readonly property string pressing: [card.album, card.year].filter(part => part).join(", ")
     // 0 is the card as it sits in the case; 1 is the notes panel folded all the way out.
     property real unfold: open ? 1 : 0
@@ -54,23 +61,33 @@ Item {
         property int size: 15
         property int lines: 1
         property real leading: 1.0
+        property int weight: Font.Bold
+        property bool italic: false
+        // Shown faintly while there is nothing written yet.
+        property string placeholder: ""
+        // A note runs to several lines: Enter breaks the line, Ctrl+Enter or a click elsewhere keeps it.
+        property bool multiline: false
+        // What the editor opens with, where that differs from what is shown.
+        property string draft: text
+        readonly property bool editing: editor.visible
         signal committed(string text)
         implicitHeight: label.implicitHeight
         Text {
             id: label
             width: parent.width; visible: !editor.visible
-            text: editable.text; wrapMode: Text.Wrap; maximumLineCount: editable.lines; elide: Text.ElideRight
-            font.family: insert.mono; font.pixelSize: editable.size; font.weight: Font.Bold; lineHeight: editable.leading; color: insert.ink
+            text: editable.text || editable.placeholder; wrapMode: Text.Wrap; maximumLineCount: editable.lines; elide: Text.ElideRight
+            font.family: insert.mono; font.pixelSize: editable.size; font.weight: editable.weight; font.italic: editable.italic
+            lineHeight: editable.leading; color: editable.text ? insert.ink : insert.inkDim; opacity: editable.text ? 1 : 0.75
             MouseArea { anchors.fill: parent; cursorShape: Qt.IBeamCursor; onDoubleClicked: editable.begin() }
         }
         // TextEdit has an insert() of its own, so everything that means the card lives out here.
         readonly property color ink: insert.ink
         readonly property color paper: insert.paper
-        function begin() { editor.text = text; editor.visible = true; insert.typing = true; editor.forceActiveFocus(); editor.selectAll() }
+        function begin() { editor.text = draft; editor.visible = true; insert.typing = true; insert.writing = editable; editor.forceActiveFocus(); editor.selectAll() }
         function end(keep) {
             if (!editor.visible) return
-            editor.visible = false; insert.typing = false
-            if (keep && editor.text.trim() !== text) committed(editor.text.trim())
+            editor.visible = false; insert.typing = false; insert.writing = null
+            if (keep && editor.text.trim() !== draft) committed(editor.text.trim())
         }
         Connections { target: insert; function onOpenChanged() { editable.end(false) } }
         TextEdit {
@@ -78,7 +95,7 @@ Item {
             width: parent.width; visible: false
             wrapMode: TextEdit.Wrap; selectByMouse: true; textFormat: TextEdit.PlainText
             font: label.font; color: editable.ink; selectionColor: editable.ink; selectedTextColor: editable.paper
-            Keys.onReturnPressed: editable.end(true)
+            Keys.onReturnPressed: event => { if (editable.multiline && !(event.modifiers & Qt.ControlModifier)) event.accepted = false; else editable.end(true) }
             Keys.onEnterPressed: editable.end(true)
             Keys.onEscapePressed: editable.end(false)
             onActiveFocusChanged: if (!activeFocus) editable.end(true)
@@ -96,6 +113,28 @@ Item {
     MouseArea { anchors.fill: parent; anchors.margins: -2000; onClicked: insert.dismissed(); onWheel: wheel => wheel.accepted = true }
 
     Item {
+        id: lifted
+        anchors.fill: parent; z: 6
+        visible: opacity > 0; opacity: insert.zoomed ? 1 : 0; enabled: insert.zoomed
+        Behavior on opacity { NumberAnimation { duration: 140 } }
+        Rectangle { anchors.fill: parent; anchors.margins: -2000; color: Qt.alpha(insert.scrim, 0.55) }
+        MouseArea { anchors.fill: parent; anchors.margins: -2000; onClicked: insert.zoomed = false; onWheel: wheel => wheel.accepted = true }
+        Rectangle {
+            id: photo
+            readonly property real side: Math.min(parent.width, parent.height) - 96
+            // Kept to the picture's own shape, within the square the card allows.
+            readonly property real shape: closeUp.implicitWidth > 0 ? closeUp.implicitHeight / closeUp.implicitWidth : 1
+            anchors.centerIn: parent; anchors.verticalCenterOffset: insert.zoomed ? 0 : 14
+            width: (shape > 1 ? side / shape : side) + 20; height: (shape > 1 ? side : side * shape) + 20
+            rotation: insert.tilt; scale: insert.zoomed ? 1 : 0.94; antialiasing: true
+            color: insert.paper; radius: 2
+            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+            Rectangle { z: -1; x: 6; y: 9; width: parent.width; height: parent.height; radius: 3; color: Qt.alpha("black", 0.35); antialiasing: true }
+            Image { id: closeUp; anchors.fill: parent; anchors.margins: 10; source: insert.zoomed || lifted.visible ? picture.source : ""; fillMode: Image.PreserveAspectFit; asynchronous: true; mipmap: true; smooth: true }
+        }
+    }
+
+    Item {
         id: sheet
         readonly property int coverWidth: 292
         readonly property int spineWidth: 36
@@ -105,6 +144,15 @@ Item {
         width: coverWidth + spineWidth + notesWidth; height: 452
         MouseArea { width: sheet.coverWidth + sheet.spineWidth + sheet.notesWidth * insert.unfold; height: parent.height; onWheel: wheel => insert.scroll(-wheel.angleDelta.y / 2) }
         Rectangle { x: 5; y: 7; width: sheet.coverWidth + sheet.spineWidth + sheet.notesWidth * insert.unfold; height: parent.height; radius: 3; color: Qt.alpha("black", 0.3) }
+        // A press anywhere but the words being written keeps them, as clicking away from type should.
+        MouseArea {
+            anchors.fill: parent; anchors.margins: -2000; z: 4; enabled: insert.writing !== null
+            onPressed: mouse => {
+                const at = mapToItem(insert.writing, mouse.x, mouse.y)
+                if (at.x < 0 || at.y < 0 || at.x > insert.writing.width || at.y > insert.writing.height) insert.writing.end(true)
+                mouse.accepted = false
+            }
+        }
         DropArea {
             id: drops
             anchors.fill: parent; z: 3
@@ -149,6 +197,7 @@ Item {
                     anchors.fill: parent; source: insert.tape.coverUrl && insert.tape.coverUrl.toString() ? insert.tape.coverUrl : insert.card.cover || ""
                     fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true
                     sourceSize.width: 780; sourceSize.height: 780
+                    MouseArea { anchors.fill: parent; enabled: picture.status === Image.Ready; cursorShape: Qt.PointingHandCursor; onDoubleClicked: insert.zoom(); Accessible.role: Accessible.Button; Accessible.name: "Look at the cover" }
                 }
                 Rectangle { anchors.fill: parent; color: "transparent"; border.color: drops.overArt ? insert.ink : Qt.alpha(insert.ink, 0.35); border.width: drops.overArt ? 3 : 1 }
             }
@@ -167,7 +216,15 @@ Item {
                 visible: insert.mixtape
                 x: 140; y: 16; width: 136
                 Editable { id: tapeName; width: parent.width; text: insert.title; size: 14; lines: 4; leading: 1.1; onCommitted: text => insert.renamed(text) }
-                Text { y: tapeName.implicitHeight + 8; width: parent.width; text: insert.byline; wrapMode: Text.Wrap; font.family: insert.mono; font.pixelSize: 10; color: insert.inkDim }
+                Text { id: tapeSummary; y: tapeName.implicitHeight + 8; width: parent.width; text: insert.byline; wrapMode: Text.Wrap; font.family: insert.mono; font.pixelSize: 10; color: insert.inkDim }
+                Editable {
+                    y: tapeSummary.y + tapeSummary.implicitHeight + 10; width: parent.width
+                    text: insert.tape.from ? "from " + insert.tape.from : ""; placeholder: "Sign your name"
+                    size: 11; lines: 2; weight: Font.Normal; italic: true
+                    // The word "from" is printed on the card; only the name is yours to write.
+                    draft: insert.tape.from || ""
+                    onCommitted: text => insert.signed(text)
+                }
             }
             Rectangle { visible: insert.mixtape; x: 16; y: 140; width: 260; height: 1; color: insert.inkDim; opacity: 0.55 }
             ListView {
@@ -297,6 +354,19 @@ Item {
                                 }
                             }
                         }
+                    }
+                    Item {
+                        visible: insert.mixtape
+                        width: prose.width; height: note.implicitHeight + (insert.tape.from ? 34 : 18)
+                        Rectangle { width: 2; height: note.implicitHeight; color: insert.stripe }
+                        Editable {
+                            id: note
+                            x: 12; width: parent.width - 12
+                            text: insert.tape.note || ""; placeholder: "Write a note to go with this tape"
+                            size: 11; lines: 40; leading: 1.45; weight: Font.Normal; italic: true; multiline: true
+                            onCommitted: text => insert.noted(text)
+                        }
+                        Text { visible: !!insert.tape.from && !!insert.tape.note; x: 12; y: note.implicitHeight + 6; width: parent.width - 12; horizontalAlignment: Text.AlignRight; text: insert.tape.from || ""; font.family: insert.mono; font.pixelSize: 11; font.italic: true; color: insert.ink }
                     }
                     Column {
                         visible: insert.mixtape

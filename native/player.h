@@ -60,7 +60,9 @@ public:
     Q_INVOKABLE void playTrack(int index);
     Q_INVOKABLE void moveTrack(int from, int to);
     Q_INVOKABLE void removeTrack(int index);
-    Q_INVOKABLE void renameTape(const QString &name);
+    Q_INVOKABLE void renameTape(const QString &name) { writeOnTape("name", name); }
+    Q_INVOKABLE void signTape(const QString &from) { writeOnTape("from", from); }
+    Q_INVOKABLE void noteTape(const QString &note) { writeOnTape("note", note); }
     Q_INVOKABLE void setCover(const QUrl &image);
     Q_INVOKABLE void exportTape(const QUrl &destination);
     Q_INVOKABLE QVariantMap insertOf(int index);
@@ -89,6 +91,7 @@ private:
     void search(bool forward);
     void cue(const QJsonObject &landed, bool play);
     void edit(QJsonObject request);
+    void writeOnTape(const char *field, const QString &text) { edit({{"op", "edit"}, {"action", field}, {"text", text}}); }
     void refreshTape();
     void poll();
     int trackCount() const { return reel["tracks"].toList().size(); }

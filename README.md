@@ -130,6 +130,12 @@ now playing a tape. Drag rows to reorder, double-click one to play it, and use t
 Delete) to take it off. Double-click the tape's name to retitle it in place. Drop an image on the
 cover to make it the tape's own. The liner notes follow whichever track you pick out.
 
+A tape for a friend wants signing: double-click "Sign your name" under the tape's name, and
+"Write a note to go with this tape" at the top of the liner notes. Both are typed straight onto
+the card. In the note, Enter starts a new line; Ctrl+Enter or a click elsewhere keeps it, and Esc
+gives it up. Double-click a cover picture to lift it off the card for a closer look (it never
+lands quite straight); a click or Esc puts it back.
+
 ![a mixtape's insert](docs/mixtape.png)
 
 Ctrl+S saves the tape, and the display between the reels becomes the progress bar while it packs.
@@ -149,11 +155,17 @@ absolute; `#` lines that nap does not know are ignored:
 #EXTM3U
 #PLAYLIST:Summer '98
 #EXTIMG:_cover.jpg
+#FROM:Shane
+#NOTE:Made this for the drive up.
+#NOTE:Side B is the good one.
 
 01 Roygbiv.flac
 02 Don't Stop.mp3
 /home/me/Music/03 far away.ogg
 ```
+
+`#FROM:` and `#NOTE:` (one per line of the note) are nap's own. M3U has no field for either, but
+players skip `#` lines they do not know, so the file stays a valid playlist.
 
 On a tape, PREV and NEXT move between tracks and always wrap around. When the last track ends the
 deck auto-stops, cued back at track one; with LOOP on the tape starts over instead. Bookmarks

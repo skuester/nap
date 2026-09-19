@@ -80,7 +80,7 @@ ApplicationWindow {
     Shortcut { enabled: !win.typing; sequence: "Q"; onActivated: Qt.quit() }
     Shortcut { enabled: !win.typing; sequence: "?"; onActivated: win.helpVisible = !win.helpVisible }
     Shortcut { enabled: !win.typing; sequence: "K"; onActivated: win.helpVisible = !win.helpVisible }
-    Shortcut { enabled: !win.typing; sequence: "Escape"; onActivated: if (win.helpVisible) win.helpVisible = false; else win.showInsert(false) }
+    Shortcut { enabled: !win.typing; sequence: "Escape"; onActivated: { if (win.helpVisible) win.helpVisible = false; else if (jcard.zoomed) jcard.zoomed = false; else win.showInsert(false) } }
     FileDialog {
         id: picker; title: "Load a tape"; fileMode: FileDialog.OpenFiles
         nameFilters: ["Audio and tapes (*.mp3 *.flac *.wav *.ogg *.opus *.m4a *.aac *.aiff *.aif *.wma *.ape *.alac *.wv *.tape *.jcard)", "All files (*)"]
@@ -274,6 +274,8 @@ ApplicationWindow {
             onTapeDropped: urls => deck.openUrls(urls)
             onCoverDropped: image => deck.setCover(image)
             onRenamed: name => deck.renameTape(name)
+            onSigned: from => deck.signTape(from)
+            onNoted: note => deck.noteTape(note)
             onPlayRequested: index => { selected = -1; deck.playTrack(index) }
             onMoveRequested: (from, to) => deck.moveTrack(from, to)
             onRemoveRequested: index => { selected = -1; deck.removeTrack(index) }

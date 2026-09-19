@@ -119,7 +119,7 @@ private slots:
         p.seek(11850); QTRY_COMPARE_WITH_TIMEOUT(index(), 0, 5000); QTRY_VERIFY_WITH_TIMEOUT(p.playing(), 5000);
         p.toggleLoop(); p.stop();
 
-        p.renameTape("Test Mix"); p.moveTrack(1, 0);
+        p.renameTape("Test Mix"); p.signTape("Shane"); p.noteTape("Rewind before returning."); p.moveTrack(1, 0);
         QCOMPARE(files(), QStringList({"Second.wav", first})); QCOMPARE(index(), 1); QVERIFY(p.tape()["dirty"].toBool());
         p.setCover(QUrl::fromLocalFile(audio));
         QCOMPARE(notices.last()[0].toString(), QString("Drop an image to use as the cover"));
@@ -138,6 +138,7 @@ private slots:
         p.load({audio}); QTRY_COMPARE(p.duration(), 12000); QVERIFY(!p.tape()["mixtape"].toBool());
         p.load({saved}, true);
         QTRY_COMPARE_WITH_TIMEOUT(p.tape()["name"].toString(), QString("Test Mix"), 5000);
+        QCOMPARE(p.tape()["from"].toString(), QString("Shane")); QCOMPARE(p.tape()["note"].toString(), QString("Rewind before returning."));
         QTRY_COMPARE(p.duration(), 12000); QCOMPARE(files(), QStringList({"Second.wav", "Second.wav"}));
         QVERIFY(p.tape()["tracks"].toList().first().toMap()["path"].toString().startsWith(QDir::tempPath()));
         QDesktopServices::setUrlHandler("file", this, "openedUrl");
@@ -206,6 +207,20 @@ private slots:
         card->setProperty("selected", 1);
         QCOMPARE(card->property("trackTitle").toString(), QString("Flip side.wav"));
         p.renameTape("Flip Mix"); QCOMPARE(card->property("title").toString(), QString("Flip Mix"));
+        // Signed, with a note, the way a tape for a friend would be.
+        p.signTape(" Shane "); p.noteTape("For the drive up.\nSide B is the good one.");
+        QCOMPARE(p.tape()["from"].toString(), QString("Shane"));
+        QCOMPARE(p.tape()["note"].toString(), QString("For the drive up.\nSide B is the good one."));
+        // The cover lifts off the card a little askew, never the same way twice; Esc puts it back first.
+        QSet<double> tilts;
+        for (int i = 0; i < 6; ++i) {
+            QVERIFY(QMetaObject::invokeMethod(card, "zoom"));
+            const double tilt = card->property("tilt").toDouble();
+            QVERIFY(std::abs(tilt) >= 1 && std::abs(tilt) <= 2.6); tilts << tilt;
+        }
+        QVERIFY(tilts.size() > 1); QVERIFY(card->property("zoomed").toBool());
+        QTest::keyClick(w, Qt::Key_Escape);
+        QVERIFY(!card->property("zoomed").toBool()); QVERIFY(w->property("insertVisible").toBool());
         QTest::qWait(50); QVERIFY(w->grabWindow().save("build/mixtape-preview.png"));
         QTest::keyClick(w, Qt::Key_Delete); QCOMPARE(p.tape()["tracks"].toList().size(), 1);
         QCOMPARE(card->property("selected").toInt(), -1);

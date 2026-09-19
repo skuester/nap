@@ -148,8 +148,10 @@ impl Session {
     pub fn describe(&mut self) -> Value {
         let tracks: Vec<Value> = self.tape.tracks.clone().iter().map(|track| self.brief(track)).collect();
         let seconds: u64 = tracks.iter().filter_map(|t| t["seconds"].as_u64()).sum();
-        let mixtape = tracks.len() > 1 || !self.tape.name.is_empty() || self.tape.cover.is_some();
-        json!({"name": self.tape.name, "cover": self.tape.cover, "tracks": tracks, "index": self.index,
+        let written = [&self.tape.name, &self.tape.from, &self.tape.note].iter().any(|text| !text.is_empty());
+        let mixtape = tracks.len() > 1 || written || self.tape.cover.is_some();
+        json!({"name": self.tape.name, "from": self.tape.from, "note": self.tape.note,
+            "cover": self.tape.cover, "tracks": tracks, "index": self.index,
             "seconds": seconds, "dirty": self.dirty, "mixtape": mixtape})
     }
 
@@ -192,8 +194,14 @@ impl Session {
             "remove" => self.remove(number("index"))?,
             "move" => self.reorder(number("from"), number("to"))?,
             "cover" => self.set_cover(request["path"].as_str().unwrap_or(""))?,
-            "name" => {
-                self.tape.name = request["name"].as_str().unwrap_or("").trim().to_owned();
+            // Words written on the card: its name, who it is from, and the note that goes with it.
+            field @ ("name" | "from" | "note") => {
+                let text = request["text"].as_str().unwrap_or("").trim().to_owned();
+                *match field {
+                    "name" => &mut self.tape.name,
+                    "from" => &mut self.tape.from,
+                    _ => &mut self.tape.note,
+                } = text;
                 false
             }
             _ => return Err("unknown tape edit".into()),
