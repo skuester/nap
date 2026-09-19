@@ -54,21 +54,16 @@ impl Default for Theme {
 }
 
 impl Theme {
+    /// One `key = "#rrggbb"` line; comments, other shapes, and bad colours are `None`.
+    fn entry(line: &str) -> Option<(&str, Rgb)> {
+        let (key, value) = line.trim().split_once('=').filter(|_| !line.trim().starts_with('#'))?;
+        Some((key.trim(), Rgb::parse(value.trim().trim_matches('"'))?))
+    }
+
     pub fn parse(text: &str) -> Self {
         let mut t = Theme::default();
-        for line in text.lines() {
-            let line = line.trim();
-            if line.starts_with('#') {
-                continue;
-            }
-            let Some((key, value)) = line.split_once('=') else {
-                continue;
-            };
-            let value = value.trim().trim_matches('"');
-            let Some(rgb) = Rgb::parse(value) else {
-                continue;
-            };
-            match key.trim() {
+        for (key, rgb) in text.lines().filter_map(Theme::entry) {
+            match key {
                 "background" => t.background = rgb,
                 "foreground" => t.foreground = rgb,
                 "light_foreground" => t.light_foreground = rgb,

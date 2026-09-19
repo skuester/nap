@@ -69,70 +69,115 @@ pub fn timestamp(text: &str) -> Option<i64> {
     if seconds > 1e12 { None } else { Some((seconds * 1000.0).round() as i64) }
 }
 
+fn volume(text: &str) -> Result<f64, String> {
+    let v: f64 = text.parse().map_err(|_| "invalid volume")?;
+    if !v.is_finite() || !(0.0..=100.0).contains(&v) {
+        return Err("volume must be between 0 and 100".into());
+    }
+    Ok(v / 100.0)
+}
+
+/// Options that end parsing on the spot.
+fn immediate(key: &str) -> Option<Action> {
+    match key {
+        "-h" | "--help" => Some(Action::Help),
+        "-V" | "--version" => Some(Action::Version),
+        "--mime-types" => Some(Action::MimeTypes),
+        "--uninstall-desktop" => Some(Action::DesktopUninstall),
+        _ => None,
+    }
+}
+
+const VALUED: [&str; 7] =
+    ["--time", "--start", "--timestamp", "--volume", "--screenshot", "--link", "--install-desktop"];
+
+#[derive(Default)]
+struct Parser {
+    options: Options,
+    install: bool,
+    uninstall: bool,
+    link: Option<PathBuf>,
+    literal: bool,
+}
+
+impl Parser {
+    fn file(&mut self, arg: OsString) -> Result<(), String> {
+        match self.options.path.replace(arg.into()) {
+            Some(_) => Err("open one audio file at a time".into()),
+            None => Ok(()),
+        }
+    }
+
+    /// Switches that take no value; false when `key` is not one.
+    fn switch(&mut self, key: &str) -> bool {
+        match key {
+            "--" => self.literal = true,
+            "--paused" => self.options.paused = true,
+            "--ignore-bookmark" => self.options.ignore = true,
+            "--loop" => self.options.looping = true,
+            "--install-hyprland" => self.install = true,
+            "--uninstall-hyprland" => self.uninstall = true,
+            _ => return false,
+        }
+        true
+    }
+
+    fn valued(&mut self, key: &str, value: OsString) -> Result<Option<Action>, String> {
+        let text = value.to_str().unwrap_or("");
+        match key {
+            "--volume" => self.options.volume = volume(text)?,
+            "--screenshot" => self.options.screenshot = Some(value.into()),
+            "--link" => self.link = Some(value.into()),
+            "--install-desktop" => return Ok(Some(Action::DesktopInstall(value.into()))),
+            _ => self.options.start = timestamp(text).ok_or("invalid timestamp")?,
+        }
+        Ok(None)
+    }
+
+    fn finish(self) -> Result<Action, String> {
+        if self.install && self.uninstall {
+            return Err("choose install or uninstall".into());
+        }
+        if self.link.is_some() && !self.install {
+            return Err("--link requires --install-hyprland".into());
+        }
+        if (self.install || self.uninstall) && self.options.path.is_some() {
+            return Err("install commands do not accept audio files".into());
+        }
+        Ok(match (self.install, self.uninstall) {
+            (true, _) => Action::Install(self.link),
+            (_, true) => Action::Uninstall,
+            _ => Action::Run(self.options),
+        })
+    }
+}
+
+impl Parser {
+    /// One `-` argument, which may draw its value from the arguments after it.
+    fn option(&mut self, text: &str, rest: &mut impl Iterator<Item = OsString>) -> Result<Option<Action>, String> {
+        let (key, inline) = text.split_once('=').map_or((text, None), |(k, v)| (k, Some(v)));
+        if VALUED.contains(&key) {
+            let value =
+                inline.map(OsString::from).or_else(|| rest.next()).ok_or_else(|| format!("{key} needs a value"))?;
+            return self.valued(key, value);
+        }
+        match immediate(key) {
+            None if !self.switch(key) => Err(format!("unknown option {text}")),
+            action => Ok(action),
+        }
+    }
+}
+
 pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Action, String> {
     let mut args = args.into_iter();
-    let mut options = Options::default();
-    let mut install = false;
-    let mut uninstall = false;
-    let mut link = None;
-    let mut literal = false;
+    let mut parser = Parser::default();
     while let Some(arg) = args.next() {
-        if literal {
-            if options.path.replace(arg.into()).is_some() {
-                return Err("open one audio file at a time".into());
-            }
-            continue;
-        }
         let text = arg.to_str().unwrap_or("");
-        let (key, inline) = text.split_once('=').map_or((text, None), |(k, v)| (k, Some(v)));
-        let mut value =
-            || inline.map(OsString::from).or_else(|| args.next()).ok_or_else(|| format!("{key} needs a value"));
-        match key {
-            "-h" | "--help" => return Ok(Action::Help),
-            "-V" | "--version" => return Ok(Action::Version),
-            "--mime-types" => return Ok(Action::MimeTypes),
-            "--install-desktop" => return Ok(Action::DesktopInstall(value()?.into())),
-            "--uninstall-desktop" => return Ok(Action::DesktopUninstall),
-            "--" => literal = true,
-            "--paused" => options.paused = true,
-            "--ignore-bookmark" => options.ignore = true,
-            "--loop" => options.looping = true,
-            "--time" | "--start" | "--timestamp" => {
-                options.start = timestamp(value()?.to_str().unwrap_or("")).ok_or("invalid timestamp")?
-            }
-            "--volume" => {
-                let v: f64 = value()?.to_str().unwrap_or("").parse().map_err(|_| "invalid volume")?;
-                if !v.is_finite() || !(0.0..=100.0).contains(&v) {
-                    return Err("volume must be between 0 and 100".into());
-                }
-                options.volume = v / 100.0;
-            }
-            "--screenshot" => options.screenshot = Some(value()?.into()),
-            "--install-hyprland" => install = true,
-            "--uninstall-hyprland" => uninstall = true,
-            "--link" => link = Some(value()?.into()),
-            _ if text.starts_with('-') => return Err(format!("unknown option {text}")),
-            _ => {
-                if options.path.replace(arg.into()).is_some() {
-                    return Err("open one audio file at a time".into());
-                }
-            }
+        if parser.literal || !text.starts_with('-') {
+            parser.file(arg)?;
+        } else if let Some(action) = parser.option(text, &mut args)? {
+            return Ok(action);
         }
     }
-    if install && uninstall {
-        return Err("choose install or uninstall".into());
-    }
-    if link.is_some() && !install {
-        return Err("--link requires --install-hyprland".into());
-    }
-    if (install || uninstall) && options.path.is_some() {
-        return Err("install commands do not accept audio files".into());
-    }
-    if install {
-        Ok(Action::Install(link))
-    } else if uninstall {
-        Ok(Action::Uninstall)
-    } else {
-        Ok(Action::Run(options))
-    }
+    parser.finish()
 }

@@ -145,6 +145,12 @@ restoration, keyboard and mouse input, CLI validation, and offscreen rendering.
 Tests need access to an initializing Qt audio backend, even at zero volume.
 The rendered empty deck is saved to `build/preview.png`.
 
+`make crap` scores every function for change risk (CRAP = complexity² × (1 − coverage)³ +
+complexity) and fails if any exceeds 12. Rust is scored by
+[crap4rs](https://crates.io/crates/crap4rs) over `cargo llvm-cov` coverage; the C++ adapter by
+`tests/crap_cpp.py`, which does the same sum with gcov over both the Qt test and the real binary.
+It needs `cargo install crap4rs cargo-llvm-cov`.
+
 For a preview without displaying a window:
 
 ```sh

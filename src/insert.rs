@@ -11,7 +11,7 @@ use lofty::mp4::{AtomData, AtomIdent, Ilst};
 use lofty::ogg::tag::VorbisComments;
 use lofty::picture::PictureType;
 use lofty::probe::Probe;
-use lofty::tag::{ItemKey, ItemValue, TagType};
+use lofty::tag::{ItemKey, ItemValue, Tag, TagType};
 use serde_json::{Value, json};
 use std::fs::File;
 use std::io::BufReader;
@@ -95,108 +95,152 @@ fn id3v2_extras(tag: &Id3v2Tag, rows: &mut Rows) {
     }
 }
 
+fn atom_text(data: &AtomData) -> Option<String> {
+    match data {
+        AtomData::UTF8(text) | AtomData::UTF16(text) => Some(text.clone()),
+        AtomData::SignedInteger(n) => Some(n.to_string()),
+        AtomData::UnsignedInteger(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
 fn ilst_extras(tag: &Ilst, rows: &mut Rows) {
-    for atom in tag {
-        let AtomIdent::Freeform { mean, name } = atom.ident() else { continue };
-        if ItemKey::from_key(TagType::Mp4Ilst, &format!("----:{mean}:{name}")).is_some() {
-            continue;
+    let custom = tag.into_iter().filter_map(|atom| match atom.ident() {
+        AtomIdent::Freeform { mean, name }
+            if ItemKey::from_key(TagType::Mp4Ilst, &format!("----:{mean}:{name}")).is_none() =>
+        {
+            Some((name, atom))
         }
-        for data in atom.data() {
-            match data {
-                AtomData::UTF8(text) | AtomData::UTF16(text) => push(rows, humanize(name), text),
-                AtomData::SignedInteger(n) => push(rows, humanize(name), &n.to_string()),
-                AtomData::UnsignedInteger(n) => push(rows, humanize(name), &n.to_string()),
-                _ => {}
-            }
+        _ => None,
+    });
+    for (name, atom) in custom {
+        for text in atom.data().filter_map(atom_text) {
+            push(rows, humanize(name), &text);
         }
     }
 }
 
 fn ape_extras(tag: &ApeTag, rows: &mut Rows) {
-    for item in tag {
-        if ItemKey::from_key(TagType::Ape, item.key()).is_none() && !matches!(item.value(), ItemValue::Binary(_)) {
-            push(rows, humanize(item.key()), &value_text(item.value()));
+    let custom = tag.into_iter().filter(|item| ItemKey::from_key(TagType::Ape, item.key()).is_none());
+    for item in custom.filter(|item| !matches!(item.value(), ItemValue::Binary(_))) {
+        push(rows, humanize(item.key()), &value_text(item.value()));
+    }
+}
+
+/// The format's own tags, whichever of them it carries.
+#[derive(Default)]
+struct Native<'a> {
+    id3v2: Option<&'a Id3v2Tag>,
+    ape: Option<&'a ApeTag>,
+    vorbis: Option<&'a VorbisComments>,
+    ilst: Option<&'a Ilst>,
+}
+
+impl Native<'_> {
+    fn extras(&self, rows: &mut Rows) {
+        if let Some(tag) = self.vorbis {
+            vorbis_extras(tag, rows);
         }
+        if let Some(tag) = self.id3v2 {
+            id3v2_extras(tag, rows);
+        }
+        if let Some(tag) = self.ilst {
+            ilst_extras(tag, rows);
+        }
+        if let Some(tag) = self.ape {
+            ape_extras(tag, rows);
+        }
+    }
+}
+
+trait NativeTags: AudioFile + Sized {
+    fn native(&self) -> Native<'_>;
+
+    fn gather(reader: &mut BufReader<File>, rows: &mut Rows) -> Option<()> {
+        let file = Self::read_from(reader, ParseOptions::new().read_cover_art(false)).ok()?;
+        file.native().extras(rows);
+        Some(())
+    }
+}
+impl NativeTags for lofty::flac::FlacFile {
+    fn native(&self) -> Native<'_> {
+        Native { vorbis: self.vorbis_comments(), id3v2: self.id3v2(), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::ogg::VorbisFile {
+    fn native(&self) -> Native<'_> {
+        Native { vorbis: Some(self.vorbis_comments()), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::ogg::OpusFile {
+    fn native(&self) -> Native<'_> {
+        Native { vorbis: Some(self.vorbis_comments()), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::ogg::SpeexFile {
+    fn native(&self) -> Native<'_> {
+        Native { vorbis: Some(self.vorbis_comments()), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::mpeg::MpegFile {
+    fn native(&self) -> Native<'_> {
+        Native { id3v2: self.id3v2(), ape: self.ape(), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::mp4::Mp4File {
+    fn native(&self) -> Native<'_> {
+        Native { ilst: self.ilst(), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::iff::wav::WavFile {
+    fn native(&self) -> Native<'_> {
+        Native { id3v2: self.id3v2(), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::iff::aiff::AiffFile {
+    fn native(&self) -> Native<'_> {
+        Native { id3v2: self.id3v2(), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::aac::AacFile {
+    fn native(&self) -> Native<'_> {
+        Native { id3v2: self.id3v2(), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::ape::ApeFile {
+    fn native(&self) -> Native<'_> {
+        Native { ape: self.ape(), id3v2: self.id3v2(), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::wavpack::WavPackFile {
+    fn native(&self) -> Native<'_> {
+        Native { ape: self.ape(), ..Native::default() }
+    }
+}
+impl NativeTags for lofty::musepack::MpcFile {
+    fn native(&self) -> Native<'_> {
+        Native { ape: self.ape(), id3v2: self.id3v2(), ..Native::default() }
     }
 }
 
 /// Fields the format-neutral view cannot name, read from the format's own tag.
 fn extras(path: &Path, kind: FileType, rows: &mut Rows) -> Option<()> {
-    let mut reader = BufReader::new(File::open(path).ok()?);
-    let options = ParseOptions::new().read_cover_art(false);
-    macro_rules! read {
-        ($file:ty) => {
-            <$file>::read_from(&mut reader, options).ok()?
-        };
-    }
+    let reader = &mut BufReader::new(File::open(path).ok()?);
     match kind {
-        FileType::Flac => {
-            let file = read!(lofty::flac::FlacFile);
-            if let Some(t) = file.vorbis_comments() {
-                vorbis_extras(t, rows);
-            }
-            if let Some(t) = file.id3v2() {
-                id3v2_extras(t, rows);
-            }
-        }
-        FileType::Vorbis => vorbis_extras(read!(lofty::ogg::VorbisFile).vorbis_comments(), rows),
-        FileType::Opus => vorbis_extras(read!(lofty::ogg::OpusFile).vorbis_comments(), rows),
-        FileType::Speex => vorbis_extras(read!(lofty::ogg::SpeexFile).vorbis_comments(), rows),
-        FileType::Mpeg => {
-            let file = read!(lofty::mpeg::MpegFile);
-            if let Some(t) = file.id3v2() {
-                id3v2_extras(t, rows);
-            }
-            if let Some(t) = file.ape() {
-                ape_extras(t, rows);
-            }
-        }
-        FileType::Mp4 => {
-            if let Some(t) = read!(lofty::mp4::Mp4File).ilst() {
-                ilst_extras(t, rows);
-            }
-        }
-        FileType::Wav => {
-            if let Some(t) = read!(lofty::iff::wav::WavFile).id3v2() {
-                id3v2_extras(t, rows);
-            }
-        }
-        FileType::Aiff => {
-            if let Some(t) = read!(lofty::iff::aiff::AiffFile).id3v2() {
-                id3v2_extras(t, rows);
-            }
-        }
-        FileType::Aac => {
-            if let Some(t) = read!(lofty::aac::AacFile).id3v2() {
-                id3v2_extras(t, rows);
-            }
-        }
-        FileType::Ape => {
-            let file = read!(lofty::ape::ApeFile);
-            if let Some(t) = file.ape() {
-                ape_extras(t, rows);
-            }
-            if let Some(t) = file.id3v2() {
-                id3v2_extras(t, rows);
-            }
-        }
-        FileType::WavPack => {
-            if let Some(t) = read!(lofty::wavpack::WavPackFile).ape() {
-                ape_extras(t, rows);
-            }
-        }
-        FileType::Mpc => {
-            let file = read!(lofty::musepack::MpcFile);
-            if let Some(t) = file.ape() {
-                ape_extras(t, rows);
-            }
-            if let Some(t) = file.id3v2() {
-                id3v2_extras(t, rows);
-            }
-        }
-        _ => {}
+        FileType::Flac => lofty::flac::FlacFile::gather(reader, rows),
+        FileType::Vorbis => lofty::ogg::VorbisFile::gather(reader, rows),
+        FileType::Opus => lofty::ogg::OpusFile::gather(reader, rows),
+        FileType::Speex => lofty::ogg::SpeexFile::gather(reader, rows),
+        FileType::Mpeg => lofty::mpeg::MpegFile::gather(reader, rows),
+        FileType::Mp4 => lofty::mp4::Mp4File::gather(reader, rows),
+        FileType::Wav => lofty::iff::wav::WavFile::gather(reader, rows),
+        FileType::Aiff => lofty::iff::aiff::AiffFile::gather(reader, rows),
+        FileType::Aac => lofty::aac::AacFile::gather(reader, rows),
+        FileType::Ape => lofty::ape::ApeFile::gather(reader, rows),
+        FileType::WavPack => lofty::wavpack::WavPackFile::gather(reader, rows),
+        FileType::Mpc => lofty::musepack::MpcFile::gather(reader, rows),
+        _ => Some(()),
     }
-    Some(())
 }
 
 fn format_name(kind: FileType) -> String {
@@ -230,92 +274,106 @@ fn tag_name(kind: TagType) -> String {
     }
 }
 
+fn channel_name(channels: u8) -> String {
+    match channels {
+        1 => "Mono".into(),
+        2 => "Stereo".into(),
+        n => n.to_string(),
+    }
+}
+
+fn audio_rows(tagged: &TaggedFile, rows: &mut Rows) {
+    let p = tagged.properties();
+    let seconds = p.duration().as_secs();
+    let length = (seconds > 0).then(|| format!("{}:{:02}", seconds / 60, seconds % 60));
+    let kinds: Vec<String> = tagged.tags().iter().map(|t| tag_name(t.tag_type())).collect();
+    let facts = [
+        ("Format", Some(format_name(tagged.file_type()))),
+        ("Length", length),
+        ("Sample rate", p.sample_rate().map(|rate| format!("{} kHz", f64::from(rate) / 1000.0))),
+        ("Bit depth", p.bit_depth().map(|depth| format!("{depth}-bit"))),
+        ("Channels", p.channels().map(channel_name)),
+        ("Bitrate", p.audio_bitrate().or(p.overall_bitrate()).map(|rate| format!("{rate} kbps"))),
+        ("Tagged with", Some(kinds.join(", "))),
+    ];
+    for (label, value) in facts {
+        push(rows, label.into(), &value.unwrap_or_default());
+    }
+}
+
 fn file_rows(path: &Path, tagged: Option<&TaggedFile>) -> Rows {
     let mut rows = Rows::new();
     if let Some(tagged) = tagged {
-        let p = tagged.properties();
-        push(&mut rows, "Format".into(), &format_name(tagged.file_type()));
-        let seconds = p.duration().as_secs();
-        if seconds > 0 {
-            push(&mut rows, "Length".into(), &format!("{}:{:02}", seconds / 60, seconds % 60));
-        }
-        if let Some(rate) = p.sample_rate() {
-            push(&mut rows, "Sample rate".into(), &format!("{} kHz", f64::from(rate) / 1000.0));
-        }
-        if let Some(depth) = p.bit_depth() {
-            push(&mut rows, "Bit depth".into(), &format!("{depth}-bit"));
-        }
-        match p.channels() {
-            Some(1) => push(&mut rows, "Channels".into(), "Mono"),
-            Some(2) => push(&mut rows, "Channels".into(), "Stereo"),
-            Some(n) => push(&mut rows, "Channels".into(), &n.to_string()),
-            None => {}
-        }
-        if let Some(rate) = p.audio_bitrate().or(p.overall_bitrate()) {
-            push(&mut rows, "Bitrate".into(), &format!("{rate} kbps"));
-        }
-        let kinds: Vec<String> = tagged.tags().iter().map(|t| tag_name(t.tag_type())).collect();
-        push(&mut rows, "Tagged with".into(), &kinds.join(", "));
+        audio_rows(tagged, &mut rows);
     }
-    if let Ok(meta) = std::fs::metadata(path) {
-        push(&mut rows, "Size".into(), &file_size(meta.len()));
-    }
-    if let Some(name) = path.file_name() {
-        push(&mut rows, "File".into(), &name.to_string_lossy());
-    }
-    if let Some(folder) = path.parent() {
-        push(&mut rows, "Folder".into(), &folder.to_string_lossy());
-    }
+    let size = std::fs::metadata(path).map(|meta| file_size(meta.len())).unwrap_or_default();
+    push(&mut rows, "Size".into(), &size);
+    push(&mut rows, "File".into(), &path.file_name().unwrap_or_default().to_string_lossy());
+    push(&mut rows, "Folder".into(), &path.parent().unwrap_or(Path::new("")).to_string_lossy());
     rows
+}
+
+/// The first value any of the file's tags gives for `key`.
+fn first(file: &TaggedFile, key: ItemKey) -> String {
+    file.tags().iter().find_map(|t| t.get_string(key)).unwrap_or_default().to_owned()
+}
+
+fn year(file: &TaggedFile) -> String {
+    let dates = [ItemKey::Year, ItemKey::RecordingDate, ItemKey::ReleaseDate].map(|key| first(file, key));
+    dates.iter().find(|date| !date.is_empty()).map(|date| date.chars().take(4).collect()).unwrap_or_default()
+}
+
+fn lyrics(file: &TaggedFile) -> String {
+    let text = [ItemKey::Lyrics, ItemKey::UnsyncLyrics].map(|key| first(file, key)).into_iter().find(|t| !t.is_empty());
+    text.unwrap_or_default().replace("\r\n", "\n").replace('\r', "\n").trim().to_owned()
+}
+
+/// "7 of 18" when the tag also knows how many there are.
+fn numbered(tag: &Tag, key: ItemKey, text: &str) -> String {
+    let total = if key == ItemKey::TrackNumber { ItemKey::TrackTotal } else { ItemKey::DiscTotal };
+    tag.get_string(total).map_or(text.to_owned(), |n| format!("{text} of {n}"))
+}
+
+fn tag_rows(file: &TaggedFile) -> Rows {
+    let mut rows = Rows::new();
+    for tag in file.tags() {
+        for item in tag.items() {
+            let text = value_text(item.value());
+            match item.key() {
+                ItemKey::Lyrics | ItemKey::UnsyncLyrics | ItemKey::TrackTotal | ItemKey::DiscTotal => {}
+                key @ (ItemKey::TrackNumber | ItemKey::DiscNumber) => {
+                    push(&mut rows, humanize(&format!("{key:?}")), &numbered(tag, key, &text))
+                }
+                key => push(&mut rows, humanize(&format!("{key:?}")), &text),
+            }
+        }
+    }
+    let pictures = file.tags().iter().map(|t| t.pictures().len()).sum::<usize>();
+    push(&mut rows, "Pictures".into(), &if pictures > 0 { pictures.to_string() } else { String::new() });
+    rows
+}
+
+/// The front cover, or failing that the first picture, as a data URL the interface can show.
+fn cover(file: &TaggedFile) -> String {
+    let pictures = || file.tags().iter().flat_map(|t| t.pictures());
+    let front = pictures().find(|p| p.pic_type() == PictureType::CoverFront).or_else(|| pictures().next());
+    let Some(picture) = front.filter(|p| p.data().len() <= COVER_LIMIT) else { return String::new() };
+    let mime = picture.mime_type().map_or("image/jpeg", |m| m.as_str());
+    format!("data:{mime};base64,{}", base64(picture.data()))
 }
 
 /// Everything the insert prints, as JSON for the Qt side.
 pub fn read(path: &Path) -> Value {
     let tagged = Probe::open(path).ok().and_then(|p| p.guess_file_type().ok()).and_then(|p| p.read().ok());
-    let (mut tags, mut lyrics, mut cover) = (Rows::new(), String::new(), String::new());
-    let mut first = |key: ItemKey| -> String {
-        let found = tagged.iter().flat_map(|f| f.tags()).find_map(|t| t.get_string(key).map(str::to_owned));
-        found.unwrap_or_default()
-    };
-    let (title, artist, album) = (first(ItemKey::TrackTitle), first(ItemKey::TrackArtist), first(ItemKey::AlbumTitle));
-    let year = [ItemKey::Year, ItemKey::RecordingDate, ItemKey::ReleaseDate]
-        .into_iter()
-        .map(&mut first)
-        .find(|v| !v.is_empty());
-    let year: String = year.unwrap_or_default().chars().take(4).collect();
-    if let Some(file) = &tagged {
-        for tag in file.tags() {
-            for item in tag.items() {
-                let text = value_text(item.value());
-                match item.key() {
-                    ItemKey::Lyrics | ItemKey::UnsyncLyrics => {
-                        if lyrics.is_empty() {
-                            lyrics = text.replace("\r\n", "\n").replace('\r', "\n").trim().to_owned();
-                        }
-                    }
-                    ItemKey::TrackTotal | ItemKey::DiscTotal => {}
-                    key @ (ItemKey::TrackNumber | ItemKey::DiscNumber) => {
-                        let total = if key == ItemKey::TrackNumber { ItemKey::TrackTotal } else { ItemKey::DiscTotal };
-                        let of = tag.get_string(total).map(|n| format!(" of {n}")).unwrap_or_default();
-                        push(&mut tags, humanize(&format!("{key:?}")), &format!("{text}{of}"));
-                    }
-                    key => push(&mut tags, humanize(&format!("{key:?}")), &text),
-                }
-            }
-        }
-        let pictures = || file.tags().iter().flat_map(|t| t.pictures());
-        let front = pictures().find(|p| p.pic_type() == PictureType::CoverFront).or_else(|| pictures().next());
-        if let Some(picture) = front.filter(|p| p.data().len() <= COVER_LIMIT) {
-            let mime = picture.mime_type().map_or("image/jpeg", |m| m.as_str());
-            cover = format!("data:{mime};base64,{}", base64(picture.data()));
-        }
-        let count = pictures().count();
-        if count > 0 {
-            push(&mut tags, "Pictures".into(), &count.to_string());
-        }
-        extras(path, file.file_type(), &mut tags);
-    }
     let rows = |rows: Rows| rows.into_iter().map(|(label, value)| json!([label, value])).collect::<Vec<_>>();
-    json!({"title": title, "artist": artist, "album": album, "year": year, "lyrics": lyrics, "cover": cover,
-        "tags": rows(tags), "file": rows(file_rows(path, tagged.as_ref()))})
+    let mut card = json!({"title": "", "artist": "", "album": "", "year": "", "lyrics": "", "cover": "", "tags": []});
+    if let Some(file) = &tagged {
+        let mut tags = tag_rows(file);
+        extras(path, file.file_type(), &mut tags);
+        card = json!({"title": first(file, ItemKey::TrackTitle), "artist": first(file, ItemKey::TrackArtist),
+            "album": first(file, ItemKey::AlbumTitle), "year": year(file), "lyrics": lyrics(file),
+            "cover": cover(file), "tags": rows(tags)});
+    }
+    card["file"] = json!(rows(file_rows(path, tagged.as_ref())));
+    card
 }

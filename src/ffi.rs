@@ -7,6 +7,8 @@ pub extern "C" fn nap_core_new() -> *mut App {
     Box::into_raw(Box::default())
 }
 
+/// # Safety
+/// `core` must be null or a pointer from [`nap_core_new`] that has not been freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nap_core_free(core: *mut App) {
     if !core.is_null() {
@@ -15,6 +17,9 @@ pub unsafe extern "C" fn nap_core_free(core: *mut App) {
     }
 }
 
+/// # Safety
+/// `core` must be null or a live pointer from [`nap_core_new`] that nothing else is using, and
+/// `request` null or a NUL-terminated string. The reply must go back to [`nap_string_free`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nap_core_request(core: *mut App, request: *const c_char) -> *mut c_char {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -32,7 +37,12 @@ pub unsafe extern "C" fn nap_core_request(core: *mut App, request: *const c_char
 }
 
 /// Analyze one buffer for the visualizers: `bands` spectrum bars from the channel mix, and into
-/// `levels` the left and right VU deflections followed by the left and right ladder levels. Hot path, so it bypasses the JSON boundary.
+/// `levels` the left and right VU deflections followed by the left and right ladder levels.
+/// Hot path, so it bypasses the JSON boundary.
+///
+/// # Safety
+/// `left` and `right` must each point to `frames` samples, `bands` to `band_count` writable
+/// floats, and `levels` to four; null pointers are ignored.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nap_analyze(
     left: *const f32,
@@ -64,6 +74,8 @@ pub unsafe extern "C" fn nap_analyze(
     }));
 }
 
+/// # Safety
+/// `text` must be null or a string returned by [`nap_core_request`], freed only once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nap_string_free(text: *mut c_char) {
     if !text.is_null() {

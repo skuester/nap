@@ -95,3 +95,83 @@ fn keys_read_like_liner_notes() {
     assert_eq!(insert::humanize("MusicBrainzRecordingId"), "MusicBrainz recording ID");
     assert_eq!(insert::humanize("Bpm"), "BPM");
 }
+
+/// A scratch copy of one of the quarter-second silent fixtures.
+fn fixture(temp: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
+    let path = temp.path().join(name);
+    fs::copy(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name), &path).unwrap();
+    path
+}
+
+#[test]
+fn custom_fields_survive_in_every_tag_format() {
+    use lofty::ape::{ApeItem, ApeTag};
+    use lofty::mp4::{Atom, AtomData, AtomIdent, Ilst};
+    use lofty::ogg::tag::VorbisComments;
+    use lofty::tag::ItemValue;
+    let temp = tempfile::tempdir().unwrap();
+    let options = WriteOptions::default;
+    for name in ["silence.flac", "silence.ogg", "silence.opus"] {
+        let path = fixture(&temp, name);
+        let mut tag = VorbisComments::default();
+        tag.set_title("Quiet".into());
+        tag.push("TAPE_MOOD".into(), "sleepy".into());
+        tag.save_to_path(&path, options()).unwrap();
+        let card = insert::read(&path);
+        assert_eq!(row(&card["tags"], "Tape mood"), Some("sleepy"), "{name}");
+        assert_eq!(row(&card["file"], "Tagged with"), Some("Vorbis comments"), "{name}");
+    }
+    for name in ["silence.mp3", "silence.aiff", "silence.aac"] {
+        let path = fixture(&temp, name);
+        let mut tag = Id3v2Tag::new();
+        tag.insert(Frame::UserText(ExtendedTextFrame::new(TextEncoding::UTF8, "TAPE_MOOD", "sleepy")));
+        tag.save_to_path(&path, options()).unwrap();
+        assert_eq!(row(&insert::read(&path)["tags"], "Tape mood"), Some("sleepy"), "{name}");
+    }
+    let path = fixture(&temp, "silence.m4a");
+    let mut tag = Ilst::default();
+    let freeform = |name: &'static str| AtomIdent::Freeform { mean: "com.apple.iTunes".into(), name: name.into() };
+    tag.insert(Atom::new(freeform("TAPE_MOOD"), AtomData::UTF8("sleepy".into())));
+    tag.insert(Atom::new(freeform("TAPE_COUNT"), AtomData::UnsignedInteger(42)));
+    tag.insert(Atom::new(freeform("TAPE_FLAG"), AtomData::Bool(true)));
+    tag.save_to_path(&path, options()).unwrap();
+    let card = insert::read(&path);
+    assert_eq!(row(&card["tags"], "Tape mood"), Some("sleepy"));
+    assert_eq!(row(&card["tags"], "Tape count"), Some("42"));
+    // MP4 stores a flag as the integer 1.
+    assert_eq!(row(&card["tags"], "Tape flag"), Some("1"));
+    assert_eq!(row(&card["file"], "Format"), Some("MPEG-4 audio"));
+
+    for name in ["silence.wv", "silence.mp3"] {
+        let path = fixture(&temp, name);
+        let mut tag = ApeTag::default();
+        tag.insert(ApeItem::new("TapeMood".into(), ItemValue::Text("sleepy".into())).unwrap());
+        tag.insert(ApeItem::new("TapeBlob".into(), ItemValue::Binary(vec![1, 2, 3])).unwrap());
+        tag.save_to_path(&path, options()).unwrap();
+        let card = insert::read(&path);
+        assert_eq!(row(&card["tags"], "Tape mood"), Some("sleepy"), "{name}");
+        assert_eq!(row(&card["tags"], "Tape blob"), None, "{name}");
+    }
+}
+
+#[test]
+fn numbered_tracks_years_and_pictures_read_naturally() {
+    use lofty::tag::{ItemKey, Tag, TagType};
+    let temp = tempfile::tempdir().unwrap();
+    let path = fixture(&temp, "silence.flac");
+    let mut tag = Tag::new(TagType::VorbisComments);
+    tag.insert_text(ItemKey::TrackNumber, "7".into());
+    tag.insert_text(ItemKey::TrackTotal, "18".into());
+    tag.insert_text(ItemKey::DiscNumber, "2".into());
+    tag.insert_text(ItemKey::RecordingDate, "1998-04-20".into());
+    tag.push_picture(Picture::unchecked(vec![9; 8]).pic_type(PictureType::Other).mime_type(MimeType::Jpeg).build());
+    tag.save_to_path(&path, WriteOptions::default()).unwrap();
+    let card = insert::read(&path);
+    assert_eq!(row(&card["tags"], "Track number"), Some("7 of 18"));
+    assert_eq!(row(&card["tags"], "Disc number"), Some("2"));
+    assert_eq!(row(&card["tags"], "Track total"), None);
+    assert_eq!(row(&card["tags"], "Pictures"), Some("1"));
+    assert_eq!(card["year"], "1998");
+    assert!(card["cover"].as_str().unwrap().starts_with("data:image/jpeg;base64,"));
+    assert_eq!(row(&card["file"], "Bit depth"), Some("16-bit"));
+}

@@ -42,10 +42,27 @@ pub trait MimeBackend {
 
 pub struct XdgMime {
     pub config: PathBuf,
+    /// The `xdg-mime` to run; tests substitute a stand-in.
+    pub program: PathBuf,
+}
+impl XdgMime {
+    pub fn new(config: PathBuf) -> Self {
+        XdgMime { config, program: "xdg-mime".into() }
+    }
+
+    /// Forget the default for `mime`: xdg-mime has no command for it, so edit `mimeapps.list`.
+    fn forget(&self, mime: &str) -> Result<(), String> {
+        let file = self.config.join("mimeapps.list");
+        if !file.exists() {
+            return Ok(());
+        }
+        let old = fs::read_to_string(&file).map_err(|e| e.to_string())?;
+        fs::write(file, remove_default(&old, mime)).map_err(|e| e.to_string())
+    }
 }
 impl MimeBackend for XdgMime {
     fn current(&self, mime: &str) -> Result<String, String> {
-        let out = Command::new("xdg-mime").args(["query", "default", mime]).output().map_err(|e| e.to_string())?;
+        let out = Command::new(&self.program).args(["query", "default", mime]).output().map_err(|e| e.to_string())?;
         if !out.status.success() {
             return Err(String::from_utf8_lossy(&out.stderr).into());
         }
@@ -53,15 +70,10 @@ impl MimeBackend for XdgMime {
     }
     fn set(&self, mime: &str, handler: &str) -> Result<(), String> {
         if handler.is_empty() {
-            let file = self.config.join("mimeapps.list");
-            if file.exists() {
-                let old = fs::read_to_string(&file).map_err(|e| e.to_string())?;
-                let new = remove_default(&old, mime);
-                fs::write(file, new).map_err(|e| e.to_string())?;
-            }
-            return Ok(());
+            return self.forget(mime);
         }
-        let status = Command::new("xdg-mime").args(["default", handler, mime]).status().map_err(|e| e.to_string())?;
+        let status =
+            Command::new(&self.program).args(["default", handler, mime]).status().map_err(|e| e.to_string())?;
         if status.success() { Ok(()) } else { Err(format!("xdg-mime failed for {mime}")) }
     }
 }
@@ -172,11 +184,16 @@ pub fn reload_hyprland() -> Result<(), String> {
     if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() {
         return Ok(());
     }
-    let reload = Command::new("hyprctl").arg("reload").output().map_err(|e| e.to_string())?;
+    reload_hyprland_with(Path::new("hyprctl"))
+}
+
+/// Reload a running Hyprland through `hyprctl` and report any configuration errors it then has.
+pub fn reload_hyprland_with(hyprctl: &Path) -> Result<(), String> {
+    let reload = Command::new(hyprctl).arg("reload").output().map_err(|e| e.to_string())?;
     if !reload.status.success() {
         return Err("hyprctl reload failed".into());
     }
-    let errors = Command::new("hyprctl").arg("configerrors").output().map_err(|e| e.to_string())?;
+    let errors = Command::new(hyprctl).arg("configerrors").output().map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&errors.stdout);
     if !errors.status.success() || !text.trim().is_empty() {
         return Err(format!("Hyprland configuration errors: {text}"));

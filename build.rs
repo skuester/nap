@@ -19,6 +19,9 @@ fn main() {
         println!("cargo:rerun-if-changed={path}");
     }
     println!("cargo:rerun-if-env-changed=CXX");
+    println!("cargo:rerun-if-env-changed=NAP_COVERAGE");
+    // `make crap` sets this to measure which native lines the tests reach, with gcov.
+    let coverage = env::var_os("NAP_COVERAGE").is_some();
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     output(Command::new("pkg-config").args(["--atleast-version=6.8", "Qt6Multimedia"]));
     let packages = ["Qt6Quick", "Qt6QuickControls2", "Qt6Multimedia"];
@@ -45,7 +48,8 @@ fn main() {
         let object = out.join(format!("native{i}.o"));
         output(
             Command::new(env::var("CXX").unwrap_or_else(|_| "c++".into()))
-                .args(["-std=c++17", "-O2", "-fPIC", "-Wall", "-Wextra", "-Inative"])
+                .args(["-std=c++17", "-fPIC", "-Wall", "-Wextra", "-Inative"])
+                .args(if coverage && source.starts_with("native") { &["-O0", "--coverage"][..] } else { &["-O2"] })
                 .args(flags.split_whitespace())
                 .arg("-c")
                 .arg(source)
@@ -67,4 +71,7 @@ fn main() {
         }
     }
     println!("cargo:rustc-link-lib=stdc++");
+    if coverage {
+        println!("cargo:rustc-link-lib=gcov");
+    }
 }

@@ -76,3 +76,55 @@ fn unset_removes_only_our_default_entry() {
         "[Default Applications]\naudio/flac=other.desktop;\n[Added Associations]\naudio/mpeg=nap.desktop;\n"
     );
 }
+
+/// An executable stand-in for a system tool, so nothing here touches the real desktop.
+fn script(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join(name);
+    fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+#[test]
+fn xdg_mime_is_driven_through_its_command_line() {
+    let temp = tempfile::tempdir().unwrap();
+    let log = temp.path().join("calls");
+    let program = script(
+        temp.path(),
+        "xdg-mime",
+        &format!("echo \"$@\" >> '{}'\n[ \"$1\" = query ] && echo ' other.desktop '\nexit 0", log.display()),
+    );
+    let mime = desktop::XdgMime { config: temp.path().into(), program };
+    assert_eq!(mime.current("audio/flac").unwrap(), "other.desktop");
+    mime.set("audio/flac", "nap.desktop").unwrap();
+    assert_eq!(fs::read_to_string(&log).unwrap(), "query default audio/flac\ndefault nap.desktop audio/flac\n");
+
+    // Clearing a default edits mimeapps.list directly, and is a no-op without one.
+    mime.set("audio/flac", "").unwrap();
+    let list = temp.path().join("mimeapps.list");
+    fs::write(&list, "[Default Applications]\naudio/flac=nap.desktop\naudio/mpeg=other.desktop\n").unwrap();
+    mime.set("audio/flac", "").unwrap();
+    assert_eq!(fs::read_to_string(&list).unwrap(), "[Default Applications]\naudio/mpeg=other.desktop\n");
+
+    let failing = desktop::XdgMime {
+        config: temp.path().into(),
+        program: script(temp.path(), "broken", "echo nope >&2; exit 3"),
+    };
+    assert_eq!(failing.current("audio/flac").unwrap_err().trim(), "nope");
+    assert_eq!(failing.set("audio/flac", "nap.desktop").unwrap_err(), "xdg-mime failed for audio/flac");
+    let missing = desktop::XdgMime { config: temp.path().into(), program: temp.path().join("absent") };
+    assert!(missing.current("audio/flac").is_err() && missing.set("audio/flac", "nap.desktop").is_err());
+    assert_eq!(desktop::XdgMime::new(temp.path().into()).program, std::path::PathBuf::from("xdg-mime"));
+}
+
+#[test]
+fn hyprland_reload_reports_configuration_errors() {
+    let temp = tempfile::tempdir().unwrap();
+    assert!(desktop::reload_hyprland_with(&script(temp.path(), "clean", "exit 0")).is_ok());
+    let refuses = script(temp.path(), "refuses", "exit 1");
+    assert_eq!(desktop::reload_hyprland_with(&refuses).unwrap_err(), "hyprctl reload failed");
+    let complains = script(temp.path(), "complains", "[ \"$1\" = configerrors ] && echo 'line 3: bad rule'\nexit 0");
+    assert!(desktop::reload_hyprland_with(&complains).unwrap_err().contains("line 3: bad rule"));
+    assert!(desktop::reload_hyprland_with(&temp.path().join("absent")).is_err());
+}

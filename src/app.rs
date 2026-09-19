@@ -35,55 +35,66 @@ pub fn start_position(explicit: i64, mark: i64, ignore: bool) -> i64 {
 pub struct App {
     path: Option<PathBuf>,
 }
+fn number(request: &Value, key: &str) -> i64 {
+    request[key].as_i64().unwrap_or(0)
+}
+fn flag(request: &Value, key: &str) -> bool {
+    request[key].as_bool().unwrap_or(false)
+}
+
 impl App {
+    fn open(&mut self, request: &Value) -> Result<Value, String> {
+        let file = PathBuf::from(request["path"].as_str().ok_or("missing path")?);
+        let path = file.canonicalize().map_err(|e| format!("Cannot open {}: {e}", file.display()))?;
+        if !path.is_file() {
+            return Err("Cannot open: not a regular file".into());
+        }
+        let size =
+            std::fs::File::open(&path).and_then(|f| f.metadata()).map_err(|e| format!("Cannot open: {e}"))?.len();
+        let mark = bookmark::read(&path).ok().flatten().and_then(|v| i64::try_from(v).ok()).unwrap_or(-1);
+        let start = request["start"].as_i64().unwrap_or(-1);
+        let ignore = flag(request, "ignore");
+        let resumed = start < 0 && !ignore && mark >= 0;
+        self.path = Some(path.clone());
+        Ok(json!({"path": path, "mark": mark, "pending": start_position(start, mark, ignore), "size": file_size(size),
+            "notice": if resumed { "Opened at your bookmark" } else { "" }}))
+    }
+
+    fn bookmark(&self, request: &Value) -> Result<Value, String> {
+        let path = self.path.as_ref().ok_or("No file loaded")?;
+        let position = number(request, "position").max(0);
+        if flag(request, "remove") {
+            bookmark::clear(path)?;
+            return Ok(json!({"mark": -1, "notice": "Bookmark removed"}));
+        }
+        bookmark::write(path, position as u64)?;
+        Ok(json!({"mark": position, "notice": "Bookmarked"}))
+    }
+
+    fn visualizer(request: &Value) -> Value {
+        if !flag(request, "next") {
+            return json!({"name": preference::load()});
+        }
+        let (name, saved) = preference::advance(request["current"].as_str().unwrap_or(""));
+        json!({"name": name, "notice": saved.err().unwrap_or_default()})
+    }
+
+    fn theme() -> Value {
+        let t = Theme::load_omarchy();
+        json!({"background": t.background.to_css(), "foreground": t.foreground.to_css(), "accent": t.accent.to_css()})
+    }
+
     pub fn dispatch(&mut self, request: &Value) -> Result<Value, String> {
-        let n = |key: &str| request[key].as_i64().unwrap_or(0);
-        let b = |key: &str| request[key].as_bool().unwrap_or(false);
+        let n = |key: &str| number(request, key);
         match request["op"].as_str().unwrap_or("") {
-            "open" => {
-                let file = PathBuf::from(request["path"].as_str().ok_or("missing path")?);
-                let path = file.canonicalize().map_err(|e| format!("Cannot open {}: {e}", file.display()))?;
-                if !path.is_file() {
-                    return Err("Cannot open: not a regular file".into());
-                }
-                let size = std::fs::File::open(&path)
-                    .and_then(|f| f.metadata())
-                    .map_err(|e| format!("Cannot open: {e}"))?
-                    .len();
-                let mark = bookmark::read(&path).ok().flatten().and_then(|v| i64::try_from(v).ok()).unwrap_or(-1);
-                let start = request["start"].as_i64().unwrap_or(-1);
-                let pending = start_position(start, mark, b("ignore"));
-                self.path = Some(path.clone());
-                Ok(json!({"path": path, "mark": mark, "pending": pending, "size": file_size(size),
-                    "notice": if start < 0 && !b("ignore") && mark >= 0 { "Opened at your bookmark" } else { "" }}))
-            }
-            "bookmark" => {
-                let path = self.path.as_ref().ok_or("No file loaded")?;
-                if b("remove") {
-                    bookmark::clear(path)?;
-                } else {
-                    bookmark::write(path, n("position").max(0) as u64)?;
-                }
-                Ok(json!({"mark": if b("remove") { -1 } else { n("position").max(0) },
-                    "notice": if b("remove") { "Bookmark removed" } else { "Bookmarked" }}))
-            }
+            "open" => self.open(request),
+            "bookmark" => self.bookmark(request),
             "insert" => Ok(insert::read(self.path.as_ref().ok_or("No file loaded")?)),
-            "visualizer" => {
-                if !b("next") {
-                    return Ok(json!({"name": preference::load()}));
-                }
-                let (name, saved) = preference::advance(request["current"].as_str().unwrap_or(""));
-                Ok(json!({"name": name, "notice": saved.err().unwrap_or_default()}))
-            }
+            "visualizer" => Ok(Self::visualizer(request)),
             "seek" => Ok(json!({"position": seek(n("position"), n("duration"))})),
             "skip" => Ok(json!({"position": skip(n("position"), n("seconds"), n("duration"))})),
             "volume" => Ok(json!({"volume": volume(request["volume"].as_f64().unwrap_or(0.0))})),
-            "theme" => {
-                let t = Theme::load_omarchy();
-                Ok(
-                    json!({"background": t.background.to_css(), "foreground": t.foreground.to_css(), "accent": t.accent.to_css()}),
-                )
-            }
+            "theme" => Ok(Self::theme()),
             _ => Err("unknown core operation".into()),
         }
     }

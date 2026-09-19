@@ -80,6 +80,9 @@ private slots:
         QDesktopServices::setUrlHandler("file", this, "openedUrl");
         p.openFolder(); QCOMPARE(opened, QUrl::fromLocalFile(QFileInfo(audio).absolutePath()));
         QDesktopServices::unsetUrlHandler("file");
+        p.openUrl(QUrl("https://example.com/tape.mp3"));
+        QCOMPARE(notices.last()[0].toString(), QString("Choose a local audio file"));
+        p.openUrl(QUrl::fromLocalFile(audio)); QTRY_COMPARE(p.duration(), 12000);
         p.openFile(directory.filePath("missing.wav"));
         QVERIFY(notices.last()[0].toString().contains("Cannot open"));
     }

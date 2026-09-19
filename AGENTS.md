@@ -24,6 +24,7 @@ Install Rust, a C++17 compiler, Make, pkg-config, Qt 6.8+ Quick/Controls/Dialogs
 - `cargo test --locked`: run Rust tests.
 - `make test -j4`: run Rust, Qt, and Python tests; render `build/preview.png`. `-j` only speeds the Qt test's C++ compile.
 - `make check`: run all tests, formatting checks, and Clippy with warnings treated as errors.
+- `make crap`: CRAP (change-risk) scores from test coverage and complexity; no function may exceed 12. Rust is scored by `crap4rs` over `cargo llvm-cov` coverage, the C++ adapter by `tests/crap_cpp.py` over gcov. Needs `cargo install crap4rs cargo-llvm-cov`.
 - `cargo fmt --all`: format Rust code.
 
 ## Coding Style & Naming Conventions
@@ -32,7 +33,7 @@ Use four-space indentation and Makefile recipe tabs. Follow `rustfmt.toml`: 120-
 
 ## Testing Guidelines
 
-Name Rust integration files `*_tests.rs` and test functions descriptively in `snake_case`. Add regression coverage in the relevant Rust suite, `tests/player_test.cpp`, or `tests/smoke.py`. No numeric coverage threshold is configured. Playback tests require an initializing Qt audio backend. Keep installer tests isolated with temporary configurations and fake MIME handlers.
+Name Rust integration files `*_tests.rs` and test functions descriptively in `snake_case`. Add regression coverage in the relevant Rust suite, `tests/player_test.cpp`, or `tests/smoke.py`. There is no bare coverage threshold, but `make crap` must pass: a function over CRAP 12 needs more tests, or, because a score is never below the function's complexity, splitting into smaller named pieces. Shell-outs take their program path as a parameter (`XdgMime::program`, `reload_hyprland_with`) so tests can substitute stand-ins; `tests/binary_tests.rs` runs the real executable in a sandboxed home, and `tests/fixtures/` holds quarter-second silent files in each container for tag tests. Playback tests require an initializing Qt audio backend. Keep installer tests isolated with temporary configurations and fake MIME handlers.
 
 ## Commit & Pull Request Guidelines
 
