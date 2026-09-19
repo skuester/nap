@@ -140,3 +140,12 @@ QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
 The waveform uses Qt's [QAudioBufferOutput](https://doc.qt.io/qt-6/qaudiobufferoutput.html),
 available with the FFmpeg backend since Qt 6.8. It reflects decoded audio before
 the volume control, so lowering volume does not flatten the visualization.
+
+## License
+
+Copyright © 2026 Shane Kuester
+
+nap is free software: you can redistribute it and/or modify it under the terms
+of the GNU Affero General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. It comes with no warranty. See [LICENSE](LICENSE) for the full text.

@@ -3,7 +3,7 @@ name = "nap"
 version = "0.1.0"
 edition = "2024"
 description = "Nice Audio Player — a cassette deck for Hyprland / Omarchy"
-license = "MIT"
+license = "AGPL-3.0-or-later"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
