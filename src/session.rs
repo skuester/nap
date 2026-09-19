@@ -73,7 +73,9 @@ impl Session {
         let into = tape::scratch(&tape::scratch_root(), &archive)?;
         let (label, total) = (format!("Loading {}", file_name(&archive)), tape::archive_size(&archive));
         self.start(label, total, move |done| {
-            tape::extract(&archive, &into, done).map(|tape| Outcome::Imported(tape, into))
+            // A tape that will not unpack leaves nothing behind.
+            let unpacked = tape::extract(&archive, &into, done).inspect_err(|_| drop(std::fs::remove_dir_all(&into)));
+            unpacked.map(|tape| Outcome::Imported(tape, into))
         });
         Ok(json!({"job": true}))
     }

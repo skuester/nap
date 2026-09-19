@@ -269,4 +269,10 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
     let mut app = App::default();
     ask(&mut app, json!({"op":"load", "paths": [temp.path().join("absent.tape")]}));
     assert!(finish(&mut app)["notice"].as_str().unwrap().contains("absent.tape"));
+    let mine = format!("{}-absent-", std::process::id());
+    let leftovers = fs::read_dir(tape::scratch_root())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with(&mine));
+    assert_eq!(leftovers.count(), 0, "a failed import removes its scratch space");
 }
