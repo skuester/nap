@@ -50,6 +50,7 @@ QString Player::detail() const {
     if (!artist.isEmpty()) bits << artist;
     if (!album.isEmpty()) bits << album;
     if (bits.isEmpty() && !path.isEmpty()) bits << QFileInfo(path).suffix().toUpper() << "LOCAL AUDIO";
+    if (!size.isEmpty()) bits << size;
     return bits.join("  ·  ");
 }
 void Player::openFile(const QString &file, bool paused, qint64 start, bool ignore) {
@@ -58,6 +59,7 @@ void Player::openFile(const QString &file, bool paused, qint64 start, bool ignor
     media.stop();
     media.setSource(QUrl());
     path = result["path"].toString();
+    size = result["size"].toString();
     mark = result["mark"].toInteger(-1);
     pending = result["pending"].toInteger(-1);
     startPaused = paused;

@@ -57,6 +57,17 @@ fn transport_policy_bounds_and_precedence() {
     assert_eq!(app::start_position(-1, 7000, true), -1);
 }
 #[test]
+fn file_sizes_are_label_sized() {
+    assert_eq!(app::file_size(999), "999 B");
+    assert_eq!(app::file_size(48_213), "48 KB");
+    assert_eq!(app::file_size(12_449_000), "12.4 MB");
+    assert_eq!(app::file_size(2_150_000_000), "2.15 GB");
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("five.wav");
+    fs::write(&file, "audio").unwrap();
+    assert_eq!(App::default().dispatch(&json!({"op":"open", "path": file})).unwrap()["size"], "5 B");
+}
+#[test]
 fn bookmark_roundtrip_rename_and_start_policy() {
     let temp = tempfile::tempdir().unwrap();
     let first = temp.path().join("first.wav");

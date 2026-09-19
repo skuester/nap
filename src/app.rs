@@ -12,6 +12,15 @@ pub fn skip(position: i64, seconds: i64, duration: i64) -> i64 {
 pub fn volume(value: f64) -> f64 {
     if value.is_finite() { value.clamp(0.0, 1.0) } else { 0.0 }
 }
+/// A label-sized file size in decimal units, like a file manager shows.
+pub fn file_size(bytes: u64) -> String {
+    match bytes {
+        0..1_000 => format!("{bytes} B"),
+        1_000..1_000_000 => format!("{} KB", bytes / 1_000),
+        1_000_000..1_000_000_000 => format!("{:.1} MB", bytes as f64 / 1e6),
+        _ => format!("{:.2} GB", bytes as f64 / 1e9),
+    }
+}
 pub fn start_position(explicit: i64, mark: i64, ignore: bool) -> i64 {
     if explicit >= 0 {
         explicit
@@ -37,12 +46,15 @@ impl App {
                 if !path.is_file() {
                     return Err("Cannot open: not a regular file".into());
                 }
-                std::fs::File::open(&path).map_err(|e| format!("Cannot open: {e}"))?;
+                let size = std::fs::File::open(&path)
+                    .and_then(|f| f.metadata())
+                    .map_err(|e| format!("Cannot open: {e}"))?
+                    .len();
                 let mark = bookmark::read(&path).ok().flatten().and_then(|v| i64::try_from(v).ok()).unwrap_or(-1);
                 let start = request["start"].as_i64().unwrap_or(-1);
                 let pending = start_position(start, mark, b("ignore"));
                 self.path = Some(path.clone());
-                Ok(json!({"path": path, "mark": mark, "pending": pending,
+                Ok(json!({"path": path, "mark": mark, "pending": pending, "size": file_size(size),
                     "notice": if start < 0 && !b("ignore") && mark >= 0 { "Opened at your bookmark" } else { "" }}))
             }
             "bookmark" => {

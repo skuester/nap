@@ -55,7 +55,7 @@ private:
     QAudioOutput output;
     QAudioBufferOutput buffers;
     QVariantList samples;
-    QString path;
+    QString path, size;
     qint64 mark = -1, pending = -1;
     bool startPaused = false;
 };
