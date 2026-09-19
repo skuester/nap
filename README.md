@@ -8,6 +8,10 @@ keyboard-first desktop as npr and nvp.
 
 ![the unfolded insert](docs/insert.png)
 
+| bars | vu |
+| --- | --- |
+| ![spectrum analyzer](docs/bars.png) | ![VU meters](docs/vu.png) |
+
 ## Build and run
 
 Requires Linux, a Rust toolchain, a C++17 compiler, Make, pkg-config, and Qt **6.8 or later** with Quick,
@@ -62,7 +66,12 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
 - **The label's A mark:** click it (or press I) to unfold the insert, a J-card with the
   embedded cover art, a spine, and liner notes listing the lyrics, every tag in the file
   (custom fields included), and its technical details. Click the folder to open it in your file manager. Files without art get a typeset cover.
-- **Plastic window:** a waveform drawn from decoded PCM samples, with no synthetic animation.
+- **Plastic window:** a live display drawn from decoded PCM samples, with no synthetic animation.
+  Click it (or press V) to step through its scenes; the choice is remembered in
+  `$XDG_STATE_HOME/nap/visualizer`:
+  - *scope*: the waveform in character cells.
+  - *bars*: a 24-band spectrum analyzer in shaded cells, with caps that hang and then fall.
+  - *vu*: a pair of needle VU meters with real meter ballistics; 0 VU is -10 dBFS RMS.
   Reels rotate only while playing, the thinner pack turning faster; tape transfers from the left spool to the right.
 
 The open button replaces the loaded file; cancellation leaves it alone. Dragging
@@ -82,6 +91,7 @@ and AIFF; actual decoding support follows the installed Qt FFmpeg backend.
 | Shift+B | Remove bookmark |
 | Enter | Return to bookmark |
 | I | Unfold / put away the insert (↑ ↓ PgUp PgDn scroll it) |
+| V | Change the visualizer |
 | O / Ctrl+O | Open file |
 | ? / K | Toggle help |
 | Esc | Close help |

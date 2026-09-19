@@ -31,6 +31,38 @@ pub unsafe extern "C" fn nap_core_request(core: *mut App, request: *const c_char
     CString::new(value.to_string()).expect("JSON escapes NUL").into_raw()
 }
 
+/// Analyze one buffer for the visualizers: `bands` spectrum bars from the channel mix, and one VU
+/// deflection per channel into `levels`. Hot path, so it bypasses the JSON boundary.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nap_analyze(
+    left: *const f32,
+    right: *const f32,
+    frames: usize,
+    rate: u32,
+    bands: *mut f32,
+    band_count: usize,
+    levels: *mut f32,
+) {
+    if left.is_null() || right.is_null() || bands.is_null() || levels.is_null() {
+        return;
+    }
+    // SAFETY: the adapter passes two `frames`-long channel arrays, a `band_count`-long output and
+    // a two-element output, all alive and unaliased for the duration of this call.
+    let (left, right, bands, levels) = unsafe {
+        (
+            std::slice::from_raw_parts(left, frames),
+            std::slice::from_raw_parts(right, frames),
+            std::slice::from_raw_parts_mut(bands, band_count),
+            std::slice::from_raw_parts_mut(levels, 2),
+        )
+    };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mix: Vec<f32> = left.iter().zip(right).map(|(l, r)| (l + r) / 2.0).collect();
+        bands.copy_from_slice(&crate::meter::spectrum(&mix, rate, band_count));
+        levels.copy_from_slice(&[crate::meter::vu(left), crate::meter::vu(right)]);
+    }));
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nap_string_free(text: *mut c_char) {
     if !text.is_null() {

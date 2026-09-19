@@ -59,6 +59,7 @@ ApplicationWindow {
     Shortcut { sequence: "Down"; onActivated: win.insertVisible ? jcard.scroll(40) : deck.setVolume(deck.volume - 0.05) }
     Shortcut { sequence: "PgUp"; enabled: win.insertVisible; onActivated: jcard.scroll(-320) }
     Shortcut { sequence: "PgDown"; enabled: win.insertVisible; onActivated: jcard.scroll(320) }
+    Shortcut { sequence: "V"; onActivated: deck.cycleVisualizer() }
     Shortcut { sequence: "I"; onActivated: win.showInsert(!win.insertVisible) }
     Shortcut { sequence: "B"; onActivated: deck.saveBookmark() }
     Shortcut { sequence: "Shift+B"; onActivated: deck.saveBookmark(true) }
@@ -181,40 +182,13 @@ ApplicationWindow {
                         x: 344; y: 6; spinning: deck.playing; wind: win.winding; tape: deck.position / Math.max(1, deck.duration)
                         hub: paper; hole: well; pack: Qt.tint(well, Qt.alpha(fg, 0.3)); groove: Qt.tint(well, Qt.alpha(fg, 0.42))
                     }
-                    Rectangle {
-                        id: scope
-                        x: 130; y: 23; width: 208; height: 84; radius: 4
+                    Scope {
+                        x: 130; y: 23
                         color: Qt.tint(well, Qt.alpha(fg, 0.04)); border.color: Qt.alpha(fg, 0.14)
-                        // The live waveform, drawn in character cells: one column per pair of samples.
-                        property var trace: []
-                        function refresh() {
-                            const samples = deck.wave, next = []
-                            for (let i = 0; i < 48; i++) {
-                                const v = samples.length > 2 * i + 1 ? (samples[2 * i] + samples[2 * i + 1]) / 2 : 0
-                                // A gentle curve keeps quiet passages moving without clipping loud ones.
-                                const shaped = Math.sign(v) * Math.pow(Math.min(1, Math.abs(v) * 1.4), 0.7)
-                                next.push(samples.length ? (trace[i] || 0) * 0.3 + shaped * 0.7 : 0)
-                            }
-                            trace = next
-                        }
-                        Connections { target: deck; function onWaveChanged() { scope.refresh() } }
-                        Item {
-                            x: 9; y: 9; width: 191; height: 67
-                            Repeater {
-                                model: 48
-                                Rectangle {
-                                    required property int index
-                                    readonly property int cells: Math.round((scope.trace[index] || 0) * 8)
-                                    x: index * 4; y: (8 - Math.max(0, cells)) * 4
-                                    width: 3; height: (Math.abs(cells) + 1) * 4 - 1
-                                    color: deck.playing ? glow : Qt.alpha(fg, 0.22)
-                                }
-                            }
-                            Repeater {
-                                model: 16
-                                Rectangle { required property int index; y: index * 4 + 3; width: parent.width; height: 1; color: scope.color }
-                            }
-                        }
+                        mode: deck.visualizer; playing: deck.playing
+                        wave: deck.wave; spectrum: deck.spectrum; levels: deck.levels
+                        glow: win.glow; fg: win.fg; paper: win.paper; ink: win.ink; stripe: win.stripe; mono: win.mono
+                        onCycled: deck.cycleVisualizer()
                     }
                 }
             }
@@ -297,7 +271,7 @@ ApplicationWindow {
             scale: Math.min(1, (parent.height - 32) / implicitHeight)
             Text { text: "Keys"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: fg; bottomPadding: 6 }
             Repeater {
-                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
+                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["V", "Change the visualizer"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
                 Row {
                     required property var modelData
                     width: parent.width
@@ -305,7 +279,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind. Drag or scroll the grooves under the tape to set the volume. Click the A on the label to read the tape's insert."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind. Drag or scroll the grooves under the tape to set the volume. Click the A on the label to read the tape's insert, or the display between the reels to change it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }

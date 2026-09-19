@@ -1,5 +1,5 @@
 //! Playback policy and file state. Qt reports transport state and executes commands.
-use crate::{bookmark, insert, theme::Theme};
+use crate::{bookmark, insert, preference, theme::Theme};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -68,6 +68,13 @@ impl App {
                     "notice": if b("remove") { "Bookmark removed" } else { "Bookmarked" }}))
             }
             "insert" => Ok(insert::read(self.path.as_ref().ok_or("No file loaded")?)),
+            "visualizer" => {
+                if !b("next") {
+                    return Ok(json!({"name": preference::load()}));
+                }
+                let (name, saved) = preference::advance(request["current"].as_str().unwrap_or(""));
+                Ok(json!({"name": name, "notice": saved.err().unwrap_or_default()}))
+            }
             "seek" => Ok(json!({"position": seek(n("position"), n("duration"))})),
             "skip" => Ok(json!({"position": skip(n("position"), n("seconds"), n("duration"))})),
             "volume" => Ok(json!({"volume": volume(request["volume"].as_f64().unwrap_or(0.0))})),

@@ -3,15 +3,19 @@
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QMediaMetaData>
+#include <vector>
+
+static constexpr int BandCount = 24, AnalysisFrames = 2048;
 
 Player::Player(QObject *parent) : QObject(parent) {
+    scene = core.request({{"op", "visualizer"}})["name"].toString();
     media.setAudioOutput(&output);
     media.setAudioBufferOutput(&buffers);
     connect(&media, &QMediaPlayer::positionChanged, this, &Player::changed);
     connect(&media, &QMediaPlayer::durationChanged, this, &Player::changed);
     connect(&media, &QMediaPlayer::metaDataChanged, this, &Player::changed);
     connect(&media, &QMediaPlayer::playbackStateChanged, this, [this] {
-        if (!playing()) { samples.clear(); emit waveChanged(); }
+        if (!playing()) { samples.clear(); bands.clear(); needles.clear(); emit waveChanged(); }
         emit changed();
     });
     connect(&media, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString &s) {
@@ -38,6 +42,20 @@ Player::Player(QObject *parent) : QObject(parent) {
                 value += format.normalizedSampleValue(data + frame * format.bytesPerFrame() + c * format.bytesPerSample());
             samples.append(value / format.channelCount());
         }
+        // The spectrum and VU meters need contiguous audio, so they get the buffer's latest frames per channel.
+        const int frames = qMin(int(b.frameCount()), AnalysisFrames), first = b.frameCount() - frames;
+        const int rightChannel = format.channelCount() > 1 ? 1 : 0;
+        std::vector<float> left(frames), right(frames);
+        for (int i = 0; i < frames; ++i) {
+            const auto *frame = data + (first + i) * format.bytesPerFrame();
+            left[i] = format.normalizedSampleValue(frame);
+            right[i] = format.normalizedSampleValue(frame + rightChannel * format.bytesPerSample());
+        }
+        float heights[BandCount] = {}, deflection[2] = {};
+        nap_analyze(left.data(), right.data(), frames, format.sampleRate(), heights, BandCount, deflection);
+        bands.clear(); needles.clear();
+        for (float height : heights) bands.append(height);
+        for (float needle : deflection) needles.append(needle);
         emit waveChanged();
     });
 }
@@ -87,6 +105,12 @@ void Player::saveBookmark(bool remove) {
     if (result.contains("error")) { emit notice("Bookmark failed: " + result["error"].toString()); return; }
     mark = result["mark"].toInteger(-1); emit changed();
     emit notice(result["notice"].toString());
+}
+void Player::cycleVisualizer() {
+    const auto result = core.request({{"op", "visualizer"}, {"next", true}, {"current", scene}});
+    scene = result["name"].toString();
+    emit visualizerChanged();
+    if (!result["notice"].toString().isEmpty()) emit notice(result["notice"].toString());
 }
 void Player::openFolder() {
     if (path.isEmpty()) return;

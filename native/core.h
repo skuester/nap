@@ -6,6 +6,7 @@ void *nap_core_new();
 void nap_core_free(void *core);
 char *nap_core_request(void *core, const char *request);
 void nap_string_free(char *text);
+void nap_analyze(const float *left, const float *right, size_t frames, quint32 rate, float *bands, size_t bandCount, float *levels);
 }
 
 // RAII owns the Rust core; no pointer or string outlives its allocator.

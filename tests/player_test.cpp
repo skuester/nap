@@ -53,7 +53,21 @@ private slots:
         bool nonzero = false;
         for (const auto &v : p.wave()) nonzero |= std::abs(v.toDouble()) > 0.01;
         QVERIFY(nonzero);
-        p.toggle(); QVERIFY(!p.playing()); QVERIFY(p.wave().isEmpty());
+        // The 440 Hz tone lands in the analyzer's tenth bar and swings both needles to about -5 VU.
+        QCOMPARE(p.spectrum().size(), 24);
+        int loudest = 0;
+        for (int i = 0; i < 24; ++i) if (p.spectrum()[i].toDouble() > p.spectrum()[loudest].toDouble()) loudest = i;
+        QCOMPARE(loudest, 9);
+        QCOMPARE(p.levels().size(), 2);
+        QVERIFY(std::abs(p.levels()[0].toDouble() - 0.39) < 0.03);
+        QCOMPARE(p.levels()[0], p.levels()[1]);
+        p.toggle(); QVERIFY(!p.playing()); QVERIFY(p.wave().isEmpty()); QVERIFY(p.spectrum().isEmpty());
+        // The visualizer choice cycles and survives a relaunch; keep the user's own state out of it.
+        QTemporaryDir state; const auto userState = qgetenv("XDG_STATE_HOME");
+        qputenv("XDG_STATE_HOME", state.path().toUtf8());
+        { Player first; QCOMPARE(first.visualizer(), QString("scope")); first.cycleVisualizer(); QCOMPARE(first.visualizer(), QString("bars")); }
+        { Player relaunched; QCOMPARE(relaunched.visualizer(), QString("bars")); relaunched.cycleVisualizer(); relaunched.cycleVisualizer(); QCOMPARE(relaunched.visualizer(), QString("scope")); }
+        if (userState.isEmpty()) qunsetenv("XDG_STATE_HOME"); else qputenv("XDG_STATE_HOME", userState);
         p.toggleLoop(); QVERIFY(p.looping()); p.toggleLoop(); QVERIFY(!p.looping());
         p.stop(); QCOMPARE(p.position(), 0); QVERIFY(!p.playing());
         p.saveBookmark(true); QCOMPARE(p.bookmark(), -1);

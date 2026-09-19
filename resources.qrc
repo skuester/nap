@@ -1,1 +1,1 @@
-<RCC><qresource prefix="/"><file>src/Main.qml</file><file>src/Insert.qml</file><file>src/Reel.qml</file><file>src/Transport.qml</file></qresource></RCC>
+<RCC><qresource prefix="/"><file>src/Main.qml</file><file>src/Insert.qml</file><file>src/Reel.qml</file><file>src/Scope.qml</file><file>src/Transport.qml</file></qresource></RCC>

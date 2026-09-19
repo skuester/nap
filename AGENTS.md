@@ -8,9 +8,9 @@ Read [brief.md](brief.md) before changing behavior or UI. Keep nap simple and co
 
 nap is a Linux audio player built with Rust 2024, C++17, and Qt 6.8+.
 
-- `src/*.rs`: CLI parsing, playback policy, bookmarks, tag reading for the insert (`insert.rs`, via lofty), themes, desktop installation, and the C ABI in `ffi.rs`.
+- `src/*.rs`: CLI parsing, playback policy, bookmarks, tag reading for the insert (`insert.rs`, via lofty), visualizer analysis and its sticky choice (`meter.rs`, `preference.rs`), themes, desktop installation, and the C ABI in `ffi.rs`.
 - `native/`: Qt Multimedia adapter. Keep policy in Rust and Qt objects here.
-- `src/Main.qml`, `Reel.qml`, `Transport.qml`, `Insert.qml`: interface; `resources.qrc` registers QML resources.
+- `src/Main.qml`, `Reel.qml`, `Transport.qml`, `Insert.qml`, `Scope.qml`: interface; `resources.qrc` registers QML resources.
 - `build.rs`: compiles native code and embeds resources.
 - `tests/`: Rust integration tests, Qt Test coverage, and Python CLI/render smoke checks.
 - `hypr/nap.lua` and `nap.desktop`: desktop integration. Build output: `target/` and `build/`.

@@ -20,6 +20,9 @@ class Player : public QObject {
     Q_PROPERTY(bool muted READ muted NOTIFY changed)
     Q_PROPERTY(double volume READ volume NOTIFY changed)
     Q_PROPERTY(QVariantList wave READ wave NOTIFY waveChanged)
+    Q_PROPERTY(QVariantList spectrum READ spectrum NOTIFY waveChanged)
+    Q_PROPERTY(QVariantList levels READ levels NOTIFY waveChanged)
+    Q_PROPERTY(QString visualizer READ visualizer NOTIFY visualizerChanged)
     Q_PROPERTY(QVariantMap palette READ palette CONSTANT)
     Q_PROPERTY(QVariantMap insert READ insert NOTIFY insertChanged)
 public:
@@ -35,6 +38,9 @@ public:
     bool muted() const { return output.isMuted(); }
     double volume() const { return output.volume(); }
     QVariantList wave() const { return samples; }
+    QVariantList spectrum() const { return bands; }
+    QVariantList levels() const { return needles; }
+    QString visualizer() const { return scene; }
     QVariantMap palette() const;
     QVariantMap insert();
     void openFile(const QString &path, bool paused = false, qint64 start = -1, bool ignore = false);
@@ -48,17 +54,20 @@ public:
     Q_INVOKABLE void toggleLoop();
     Q_INVOKABLE void saveBookmark(bool remove = false);
     Q_INVOKABLE void openFolder();
+    Q_INVOKABLE void cycleVisualizer();
 signals:
     void changed();
     void waveChanged();
     void insertChanged();
+    void visualizerChanged();
     void notice(const QString &message);
 private:
     Core core;
     QMediaPlayer media;
     QAudioOutput output;
     QAudioBufferOutput buffers;
-    QVariantList samples;
+    QVariantList samples, bands, needles;
+    QString scene;
     QVariantMap card;
     QString path, size;
     qint64 mark = -1, pending = -1;
