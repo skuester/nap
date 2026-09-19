@@ -1,5 +1,5 @@
-//! Signal analysis for the visualizers: a log-spaced spectrum for the bar analyzer and VU needle
-//! deflection for the level meters. Pure functions over decoded samples; smoothing and ballistics
+//! Signal analysis for the visualizers: a log-spaced spectrum for the analyzer and spectrogram, VU
+//! needle deflection, and sample peaks for the level ladder. Pure functions over decoded samples; smoothing and ballistics
 //! belong to the interface.
 
 use std::f32::consts::PI;
@@ -15,6 +15,8 @@ const TILT_DB_PER_OCTAVE: f32 = 3.0;
 /// A steady tone at this RMS level (dBFS) reads 0 VU, which suits mastered music.
 const VU_REFERENCE_DB: f32 = -10.0;
 const LARGEST_WINDOW: usize = 2048;
+/// The peak ladder's bottom segment, in dBFS; its top segment is full scale.
+const PEAK_FLOOR_DB: f32 = -45.0;
 
 /// In-place radix-2 FFT; `re.len()` must be a power of two.
 fn fft(re: &mut [f32], im: &mut [f32]) {
@@ -85,4 +87,10 @@ pub fn vu(samples: &[f32]) -> f32 {
     let rms = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt();
     let reference = 10f32.powf(VU_REFERENCE_DB / 20.0);
     (rms / reference / 10f32.powf(3.0 / 20.0)).clamp(0.0, 1.08)
+}
+
+/// The loudest sample as a fraction of the peak ladder: 0 at -45 dBFS or below, 1 at full scale.
+pub fn peak(samples: &[f32]) -> f32 {
+    let loudest = samples.iter().fold(0f32, |max, s| max.max(s.abs()));
+    ((20.0 * loudest.max(1e-9).log10() - PEAK_FLOOR_DB) / -PEAK_FLOOR_DB).clamp(0.0, 1.0)
 }

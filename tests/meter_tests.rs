@@ -27,20 +27,27 @@ fn vu_reads_zero_at_the_reference_level() {
     assert_eq!(meter::vu(&[]), 0.0);
     assert_eq!(meter::vu(&[0.0; 512]), 0.0);
     assert_eq!(meter::vu(&[1.0; 512]), 1.08);
+    // Peaks read sample height, not loudness: full scale tops the ladder, -22.5 dBFS is halfway up.
+    assert_eq!(meter::peak(&[0.0, -1.0, 0.2]), 1.0);
+    assert!((meter::peak(&sine(440.0, 10f32.powf(-22.5 / 20.0), 48000, 4800)) - 0.5).abs() < 0.01);
+    assert_eq!(meter::peak(&[]), 0.0);
+    assert_eq!(meter::peak(&[0.001; 64]), 0.0);
 }
 
 #[test]
 fn visualizer_choice_cycles_and_sticks() {
     let temp = tempfile::tempdir().unwrap();
     let file = preference::state_file(Some(temp.path())).unwrap();
-    assert_eq!(preference::read(Some(&file)), "scope");
-    assert_eq!(preference::read(None), "scope");
-    assert_eq!(preference::after("scope"), "bars");
-    assert_eq!(preference::after("bars"), "vu");
-    assert_eq!(preference::after("vu"), "scope");
-    assert_eq!(preference::after("nonsense"), "bars");
-    preference::write(&file, "vu").unwrap();
-    assert_eq!(preference::read(Some(&file)), "vu");
+    assert_eq!(preference::read(Some(&file)), "bars");
+    assert_eq!(preference::read(None), "bars");
+    let mut order = vec!["bars"];
+    while order.len() < 6 {
+        order.push(preference::after(order[order.len() - 1]));
+    }
+    assert_eq!(order, ["bars", "vu", "peak", "spectrogram", "scope", "bars"]);
+    assert_eq!(preference::after("nonsense"), "vu");
+    preference::write(&file, "peak").unwrap();
+    assert_eq!(preference::read(Some(&file)), "peak");
     std::fs::write(&file, "milkdrop").unwrap();
-    assert_eq!(preference::read(Some(&file)), "scope");
+    assert_eq!(preference::read(Some(&file)), "bars");
 }

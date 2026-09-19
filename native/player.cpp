@@ -51,7 +51,7 @@ Player::Player(QObject *parent) : QObject(parent) {
             left[i] = format.normalizedSampleValue(frame);
             right[i] = format.normalizedSampleValue(frame + rightChannel * format.bytesPerSample());
         }
-        float heights[BandCount] = {}, deflection[2] = {};
+        float heights[BandCount] = {}, deflection[4] = {};
         nap_analyze(left.data(), right.data(), frames, format.sampleRate(), heights, BandCount, deflection);
         bands.clear(); needles.clear();
         for (float height : heights) bands.append(height);

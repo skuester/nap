@@ -1,9 +1,10 @@
 import QtQuick
 import QtQuick.Shapes
 
-// The display between the reels. A click steps through its scenes: the cell oscilloscope, a spectrum
-// analyzer with falling caps, and a pair of VU meters. All three work on the same 4px cell grid or
-// the label's paper, so they belong to the tape rather than to a screen.
+// The display between the reels. A click steps through its scenes: a spectrum analyzer with falling
+// caps, a pair of VU meters, a deck's peak ladders over a rolling tape counter, a scrolling
+// spectrogram, and the cell oscilloscope. Each works on the same 4px cell grid or in the label's
+// paper and ink, so they belong to the tape rather than to a screen.
 Rectangle {
     id: scope
     property string mode: "scope"
@@ -11,6 +12,7 @@ Rectangle {
     property var wave: []
     property var spectrum: []
     property var levels: []
+    property real position: 0
     property color glow: "#89b4fa"
     property color fg: "#cdd6f4"
     property color paper: "#d9d5c5"
@@ -44,6 +46,9 @@ Rectangle {
     property var needle: [0, 0]
     property var swing: [0, 0]
     property var over: [0, 0]
+    property var peaks: [0, 0]
+    property var holds: [0, 0]
+    property var linger: [0, 0]
     property bool moving: false
     function step(dt) {
         let busy = false
@@ -70,12 +75,25 @@ Rectangle {
                 busy = busy || n[i] > 0.002 || Math.abs(s[i]) > 0.002
             }
             needle = n; swing = s; over = o
+        } else if (mode === "peak") {
+            const p = [], h = [], l = []
+            for (let i = 0; i < 2; i++) {
+                const target = playing ? (levels[2 + i] || 0) : 0
+                // Peak meters jump up at once and fall back at about 20 dB a second; the top segment lingers.
+                p[i] = Math.max(target, peaks[i] - 0.45 * dt)
+                h[i] = holds[i]; l[i] = linger[i]
+                if (p[i] >= h[i]) { h[i] = p[i]; l[i] = 1 }
+                else if (l[i] > 0) l[i] -= dt
+                else h[i] = Math.max(p[i], h[i] - 0.7 * dt)
+                busy = busy || h[i] > 0.001
+            }
+            peaks = p; holds = h; linger = l
         }
         moving = busy
     }
-    onModeChanged: { bars = []; caps = []; hang = []; drop = []; needle = [0, 0]; swing = [0, 0]; over = [0, 0]; trace = [] }
+    onModeChanged: { bars = []; caps = []; hang = []; drop = []; needle = [0, 0]; swing = [0, 0]; over = [0, 0]; peaks = [0, 0]; holds = [0, 0]; linger = [0, 0]; trace = []; voiceprint.clear() }
     FrameAnimation {
-        running: scope.mode !== "scope" && (scope.playing || scope.moving)
+        running: scope.mode !== "scope" && scope.mode !== "spectrogram" && (scope.playing || scope.moving)
         onTriggered: scope.step(Math.min(0.05, frameTime))
     }
 
@@ -122,7 +140,7 @@ Rectangle {
     // The cell grid: gaps cut across whatever the scope or analyzer drew.
     Item {
         x: 9; y: 9; width: 191; height: 67
-        visible: scope.mode !== "vu"
+        visible: scope.mode === "scope" || scope.mode === "bars"
         Repeater {
             model: scope.rows - 1
             Rectangle { required property int index; y: index * 4 + 3; width: parent.width; height: 1; color: scope.color }
@@ -180,6 +198,121 @@ Rectangle {
         visible: scope.mode === "vu"
         Meter { channel: "L"; deflection: scope.needle[0]; peaking: scope.over[0] > 0 }
         Meter { channel: "R"; deflection: scope.needle[1]; peaking: scope.over[1] > 0 }
+    }
+
+    // A cassette deck's front panel: segmented peak ladders, and a counter whose wheels really roll.
+    Item {
+        id: panel
+        x: 9; y: 9; width: 191; height: 67
+        visible: scope.mode === "peak"
+        readonly property int segments: 30
+        // Small steps glide and seeks whirr: whichever of velocity and duration is quicker wins.
+        property real seconds: visible ? scope.position / 1000 : 0
+        Behavior on seconds { SmoothedAnimation { velocity: 2; duration: 600 } }
+        readonly property real creep: Math.max(0, seconds % 10 - 9)
+        readonly property int tens: Math.floor(seconds / 10) % 6
+        readonly property int minutes: Math.floor(seconds / 60) % 10
+        readonly property real carry: tens === 5 ? creep : 0
+        Repeater {
+            model: 2
+            Item {
+                id: ladder
+                required property int index
+                readonly property int lit: Math.round((scope.peaks[index] || 0) * panel.segments)
+                readonly property int held: Math.round((scope.holds[index] || 0) * panel.segments)
+                y: index * 25; width: parent.width; height: 10
+                Text { y: -1; text: ladder.index ? "R" : "L"; font.family: scope.mono; font.pixelSize: 9; font.weight: Font.Bold; color: Qt.alpha(scope.fg, 0.6) }
+                Repeater {
+                    model: panel.segments
+                    Rectangle {
+                        required property int index
+                        readonly property bool on: index < ladder.lit || (ladder.held > 0 && index === ladder.held - 1)
+                        x: 11 + index * 6; width: 5; height: 10
+                        color: !on ? Qt.alpha(scope.fg, 0.07) : index >= panel.segments - 4 ? scope.fg : index < 12 ? Qt.tint(scope.color, Qt.alpha(scope.glow, 0.55)) : scope.glow
+                    }
+                }
+            }
+        }
+        Repeater {
+            model: [40, 30, 20, 10, 6, 3, 0]
+            Text {
+                required property int modelData
+                x: 11 + (45 - modelData) / 45 * 180 - width; y: 12.5
+                text: modelData; font.family: scope.mono; font.pixelSize: 7; color: Qt.alpha(scope.fg, 0.5)
+            }
+        }
+        component Wheel: Rectangle {
+            id: wheel
+            property real value: 0
+            property int count: 10
+            property bool pale: false
+            width: 14; height: 24; clip: true
+            color: pale ? scope.paper : scope.ink
+            Column {
+                y: -wheel.value * 24
+                Repeater {
+                    model: wheel.count + 1
+                    Text {
+                        required property int index
+                        width: 14; height: 24; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        text: index % wheel.count; font.family: scope.mono; font.pixelSize: 15; font.weight: Font.Bold
+                        color: wheel.pale ? scope.ink : scope.paper
+                    }
+                }
+            }
+            // The wheel curves away from the window at its top and bottom.
+            Rectangle { width: parent.width; height: 7; gradient: Gradient { GradientStop { position: 0; color: Qt.alpha("black", 0.55) } GradientStop { position: 1; color: "transparent" } } }
+            Rectangle { y: parent.height - 7; width: parent.width; height: 7; gradient: Gradient { GradientStop { position: 0; color: "transparent" } GradientStop { position: 1; color: Qt.alpha("black", 0.55) } } }
+        }
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter; y: 40; width: counter.width + 6; height: 27; radius: 2
+            color: Qt.darker(scope.color, 1.6); border.color: Qt.alpha(scope.fg, 0.2)
+            Row {
+                id: counter
+                x: 3; y: 1.5; spacing: 1
+                Wheel { value: Math.floor(panel.seconds / 600) % 10 + (panel.minutes === 9 ? panel.carry : 0) }
+                Wheel { value: panel.minutes + panel.carry }
+                Item { width: 4; height: 24 }
+                Wheel { value: panel.tens + panel.creep; count: 6 }
+                Wheel { value: panel.seconds % 10; pale: true }
+            }
+        }
+    }
+
+    // A spectrogram: each moment's spectrum printed as a column of shaded cells, bass at the bottom,
+    // scrolling left like tape past a head. Pausing holds the picture.
+    Item {
+        id: voiceprint
+        x: 9; y: 9; width: 191; height: 67
+        visible: scope.mode === "spectrogram"
+        property int head: 0
+        readonly property var shades: ["transparent", Qt.tint(scope.color, Qt.alpha(scope.glow, 0.28)), Qt.tint(scope.color, Qt.alpha(scope.glow, 0.55)), scope.glow, Qt.tint(scope.glow, Qt.alpha(scope.fg, 0.55)), scope.fg]
+        function clear() { for (let i = 0; i < columns.count; i++) if (columns.itemAt(i)) columns.itemAt(i).cells = [] }
+        function advance() {
+            const cells = []
+            for (let row = 0; row < scope.rows; row++) {
+                const band = row * (scope.barCount - 1) / (scope.rows - 1), low = Math.floor(band)
+                const level = (scope.spectrum[low] || 0) * (1 - band + low) + (scope.spectrum[Math.min(scope.barCount - 1, low + 1)] || 0) * (band - low)
+                cells.push(Math.max(0, Math.min(5, Math.floor((level - 0.12) / 0.88 * 6))))
+            }
+            columns.itemAt(head).cells = cells
+            head = (head + 1) % columns.count
+        }
+        Repeater {
+            id: columns
+            model: 48
+            Item {
+                id: column
+                required property int index
+                property var cells: []
+                x: ((index - voiceprint.head + 48) % 48) * 4; width: 3; height: parent.height
+                Repeater {
+                    model: scope.rows
+                    Rectangle { required property int index; y: 64 - index * 4; width: 3; height: 3; color: voiceprint.shades[column.cells[index] || 0] }
+                }
+            }
+        }
+        Timer { interval: 60; repeat: true; running: voiceprint.visible && scope.playing; onTriggered: voiceprint.advance() }
     }
 
     MouseArea {

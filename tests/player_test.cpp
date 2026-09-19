@@ -58,15 +58,16 @@ private slots:
         int loudest = 0;
         for (int i = 0; i < 24; ++i) if (p.spectrum()[i].toDouble() > p.spectrum()[loudest].toDouble()) loudest = i;
         QCOMPARE(loudest, 9);
-        QCOMPARE(p.levels().size(), 2);
+        QCOMPARE(p.levels().size(), 4);
+        QVERIFY(std::abs(p.levels()[2].toDouble() - (45 - 12.25) / 45) < 0.02);
         QVERIFY(std::abs(p.levels()[0].toDouble() - 0.39) < 0.03);
         QCOMPARE(p.levels()[0], p.levels()[1]);
         p.toggle(); QVERIFY(!p.playing()); QVERIFY(p.wave().isEmpty()); QVERIFY(p.spectrum().isEmpty());
         // The visualizer choice cycles and survives a relaunch; keep the user's own state out of it.
         QTemporaryDir state; const auto userState = qgetenv("XDG_STATE_HOME");
         qputenv("XDG_STATE_HOME", state.path().toUtf8());
-        { Player first; QCOMPARE(first.visualizer(), QString("scope")); first.cycleVisualizer(); QCOMPARE(first.visualizer(), QString("bars")); }
-        { Player relaunched; QCOMPARE(relaunched.visualizer(), QString("bars")); relaunched.cycleVisualizer(); relaunched.cycleVisualizer(); QCOMPARE(relaunched.visualizer(), QString("scope")); }
+        { Player first; QCOMPARE(first.visualizer(), QString("bars")); first.cycleVisualizer(); QCOMPARE(first.visualizer(), QString("vu")); }
+        { Player relaunched; QCOMPARE(relaunched.visualizer(), QString("vu")); for (int i = 0; i < 3; ++i) relaunched.cycleVisualizer(); QCOMPARE(relaunched.visualizer(), QString("scope")); }
         if (userState.isEmpty()) qunsetenv("XDG_STATE_HOME"); else qputenv("XDG_STATE_HOME", userState);
         p.toggleLoop(); QVERIFY(p.looping()); p.toggleLoop(); QVERIFY(!p.looping());
         p.stop(); QCOMPARE(p.position(), 0); QVERIFY(!p.playing());

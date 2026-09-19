@@ -186,7 +186,7 @@ ApplicationWindow {
                         x: 130; y: 23
                         color: Qt.tint(well, Qt.alpha(fg, 0.04)); border.color: Qt.alpha(fg, 0.14)
                         mode: deck.visualizer; playing: deck.playing
-                        wave: deck.wave; spectrum: deck.spectrum; levels: deck.levels
+                        wave: deck.wave; spectrum: deck.spectrum; levels: deck.levels; position: deck.position
                         glow: win.glow; fg: win.fg; paper: win.paper; ink: win.ink; stripe: win.stripe; mono: win.mono
                         onCycled: deck.cycleVisualizer()
                     }

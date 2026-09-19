@@ -11,6 +11,8 @@ keyboard-first desktop as npr and nvp.
 | bars | vu |
 | --- | --- |
 | ![spectrum analyzer](docs/bars.png) | ![VU meters](docs/vu.png) |
+| **peak** | **spectrogram** |
+| ![peak ladders and tape counter](docs/peak.png) | ![spectrogram](docs/spectrogram.png) |
 
 ## Build and run
 
@@ -69,9 +71,13 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
 - **Plastic window:** a live display drawn from decoded PCM samples, with no synthetic animation.
   Click it (or press V) to step through its scenes; the choice is remembered in
   `$XDG_STATE_HOME/nap/visualizer`:
-  - *scope*: the waveform in character cells.
-  - *bars*: a 24-band spectrum analyzer in shaded cells, with caps that hang and then fall.
+  - *bars* (the default): a 24-band spectrum analyzer in shaded cells, with caps that hang and then fall.
   - *vu*: a pair of needle VU meters with real meter ballistics; 0 VU is -10 dBFS RMS.
+  - *peak*: a deck's front panel, with segmented peak ladders (dBFS, with peak hold) over a
+    mechanical tape counter whose wheels roll with the elapsed time and whirr when you seek.
+  - *spectrogram*: the last few seconds of spectrum scrolling past in shaded cells, bass at the
+    bottom; pausing holds the picture.
+  - *scope*: the waveform in character cells.
   Reels rotate only while playing, the thinner pack turning faster; tape transfers from the left spool to the right.
 
 The open button replaces the loaded file; cancellation leaves it alone. Dragging

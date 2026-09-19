@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 /// In the order a click cycles through them; the first is the default.
-pub const VISUALIZERS: [&str; 3] = ["scope", "bars", "vu"];
+pub const VISUALIZERS: [&str; 5] = ["bars", "vu", "peak", "spectrogram", "scope"];
 
 pub fn state_file(state_dir: Option<&Path>) -> Option<PathBuf> {
     state_dir.map(|dir| dir.join("nap/visualizer"))
