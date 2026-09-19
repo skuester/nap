@@ -18,7 +18,7 @@ usage: nap [options] [audio... | mix.tape | mix.jcard]
   --install-hyprland        install floating, centered, aspect-preserving rules
   --link PATH               symlink rules from checkout
   --uninstall-hyprland      remove rules and require line
-  --mime-types              list supported audio MIME types
+  --mime-types              list the MIME types nap opens
   --screenshot PATH         save an offscreen preview and exit
   -h, --help                show help
   -V, --version             show version

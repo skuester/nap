@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- nap's own file types, installed to share/mime/packages by `make install`. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-nap-tape">
+    <comment>nap mixtape</comment>
+    <!-- A plain tar of one folder: index, cover, and audio. Archive tools can still open it. -->
+    <sub-class-of type="application/x-tar"/>
+    <generic-icon name="audio-x-generic"/>
+    <glob pattern="*.tape"/>
+  </mime-type>
+  <mime-type type="application/x-nap-jcard">
+    <comment>nap J-card track listing</comment>
+    <sub-class-of type="text/plain"/>
+    <generic-icon name="audio-x-generic"/>
+    <glob pattern="*.jcard"/>
+  </mime-type>
+</mime-info>

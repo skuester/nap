@@ -5,13 +5,17 @@ use nap::{
 use std::{cell::RefCell, collections::BTreeMap, fs};
 
 #[derive(Default)]
-struct FakeMime(RefCell<BTreeMap<String, String>>);
+struct FakeMime(RefCell<BTreeMap<String, String>>, RefCell<Vec<std::path::PathBuf>>);
 impl MimeBackend for FakeMime {
     fn current(&self, mime: &str) -> Result<String, String> {
         Ok(self.0.borrow().get(mime).cloned().unwrap_or_default())
     }
     fn set(&self, mime: &str, handler: &str) -> Result<(), String> {
         self.0.borrow_mut().insert(mime.into(), handler.into());
+        Ok(())
+    }
+    fn refresh(&self, mime_dir: &std::path::Path) -> Result<(), String> {
+        self.1.borrow_mut().push(mime_dir.into());
         Ok(())
     }
 }
@@ -37,7 +41,7 @@ fn installation_links_checkout_and_uninstalls_cleanly() {
     let prefix = temp.path().join("local");
     let config = temp.path().join("config");
     let state = temp.path().join("state");
-    for file in ["target/release/nap", "nap.desktop", "hypr/nap.lua"] {
+    for file in ["target/release/nap", "nap.desktop", "nap-mime.xml", "hypr/nap.lua"] {
         let path = checkout.join(file);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, "test").unwrap();
@@ -51,11 +55,22 @@ fn installation_links_checkout_and_uninstalls_cleanly() {
     assert_eq!(fs::read_link(prefix.join("bin/nap")).unwrap(), checkout.join("target/release/nap"));
     assert_eq!(fs::read_link(prefix.join("share/applications/nap.desktop")).unwrap(), checkout.join("nap.desktop"));
     assert_eq!(fs::read_link(config.join("hypr/nap.lua")).unwrap(), checkout.join("hypr/nap.lua"));
+    // nap's own file types are defined, the database rebuilt, and nap made their default.
+    assert_eq!(fs::read_link(prefix.join(desktop::MIME_PACKAGE)).unwrap(), checkout.join("nap-mime.xml"));
+    assert_eq!(*backend.1.borrow(), vec![prefix.join("share/mime"); 2]);
+    assert_eq!(backend.current("application/x-nap-tape").unwrap(), "nap.desktop");
+    assert_eq!(backend.current("application/x-nap-jcard").unwrap(), "nap.desktop");
     let text = fs::read_to_string(config.join("hypr/hyprland.lua")).unwrap();
     assert_eq!(text.matches(install::REQUIRE_LINE).count(), 1);
     desktop::uninstall_desktop(&prefix, &config, &state, &backend).unwrap();
     assert!(!prefix.join("bin/nap").exists());
     assert!(!prefix.join("share/applications/nap.desktop").exists());
+    assert!(fs::symlink_metadata(prefix.join(desktop::MIME_PACKAGE)).is_err());
+    assert_eq!(backend.1.borrow().len(), 3, "removing the definitions rebuilds the database once more");
+    assert_eq!(backend.current("application/x-nap-tape").unwrap(), "");
+    // A prefix that never had them is left alone.
+    desktop::uninstall_desktop(&prefix, &config, &state, &backend).unwrap();
+    assert_eq!(backend.1.borrow().len(), 3);
     assert!(!config.join("hypr/nap.lua").exists());
     assert_eq!(fs::read_to_string(config.join("hypr/hyprland.lua")).unwrap(), "-- user config\n");
 }
@@ -64,6 +79,13 @@ fn registry_matches_desktop_and_rules_preserve_aspect() {
     let desktop = include_str!("../nap.desktop");
     let line = desktop.lines().find_map(|l| l.strip_prefix("MimeType=")).unwrap();
     assert_eq!(line.split(';').filter(|s| !s.is_empty()).collect::<Vec<_>>(), MIME_TYPES);
+    // Every type nap claims beyond the audio ones is defined in its own package, with a glob.
+    let package = include_str!("../nap-mime.xml");
+    for mime in MIME_TYPES.iter().filter(|mime| !mime.starts_with("audio/")) {
+        assert!(package.contains(&format!("<mime-type type=\"{mime}\">")), "{mime}");
+    }
+    assert!(package.contains("<glob pattern=\"*.tape\"/>") && package.contains("<glob pattern=\"*.jcard\"/>"));
+    assert!(desktop.contains("Exec=nap %F"), "several selected files open as one tape");
     for rule in ["keep_aspect_ratio = true", "float = true", "center = true", "^nap$"] {
         assert!(install::RULES_LUA.contains(rule));
     }
@@ -90,15 +112,24 @@ fn script(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
 fn xdg_mime_is_driven_through_its_command_line() {
     let temp = tempfile::tempdir().unwrap();
     let log = temp.path().join("calls");
-    let program = script(
-        temp.path(),
-        "xdg-mime",
-        &format!("echo \"$@\" >> '{}'\n[ \"$1\" = query ] && echo ' other.desktop '\nexit 0", log.display()),
-    );
-    let mime = desktop::XdgMime { config: temp.path().into(), program };
+    let logging = |name: &str, extra: &str| {
+        script(temp.path(), name, &format!("echo \"$@\" >> '{}'\n{extra}\nexit 0", log.display()))
+    };
+    let tools = |program: std::path::PathBuf, database_program: std::path::PathBuf| desktop::XdgMime {
+        config: temp.path().into(),
+        program,
+        database_program,
+    };
+    let mime =
+        tools(logging("xdg-mime", "[ \"$1\" = query ] && echo ' other.desktop '"), logging("update-mime-database", ""));
     assert_eq!(mime.current("audio/flac").unwrap(), "other.desktop");
     mime.set("audio/flac", "nap.desktop").unwrap();
-    assert_eq!(fs::read_to_string(&log).unwrap(), "query default audio/flac\ndefault nap.desktop audio/flac\n");
+    mime.refresh(&temp.path().join("share/mime")).unwrap();
+    let calls = format!(
+        "query default audio/flac\ndefault nap.desktop audio/flac\n{}\n",
+        temp.path().join("share/mime").display()
+    );
+    assert_eq!(fs::read_to_string(&log).unwrap(), calls);
 
     // Clearing a default edits mimeapps.list directly, and is a no-op without one.
     mime.set("audio/flac", "").unwrap();
@@ -107,15 +138,19 @@ fn xdg_mime_is_driven_through_its_command_line() {
     mime.set("audio/flac", "").unwrap();
     assert_eq!(fs::read_to_string(&list).unwrap(), "[Default Applications]\naudio/mpeg=other.desktop\n");
 
-    let failing = desktop::XdgMime {
-        config: temp.path().into(),
-        program: script(temp.path(), "broken", "echo nope >&2; exit 3"),
-    };
+    let broken = script(temp.path(), "broken", "echo nope >&2; exit 3");
+    let failing = tools(broken.clone(), broken);
     assert_eq!(failing.current("audio/flac").unwrap_err().trim(), "nope");
     assert_eq!(failing.set("audio/flac", "nap.desktop").unwrap_err(), "xdg-mime failed for audio/flac");
-    let missing = desktop::XdgMime { config: temp.path().into(), program: temp.path().join("absent") };
+    assert_eq!(failing.refresh(temp.path()).unwrap_err(), "update-mime-database failed");
+    let missing = tools(temp.path().join("absent"), temp.path().join("absent"));
     assert!(missing.current("audio/flac").is_err() && missing.set("audio/flac", "nap.desktop").is_err());
-    assert_eq!(desktop::XdgMime::new(temp.path().into()).program, std::path::PathBuf::from("xdg-mime"));
+    assert!(missing.refresh(temp.path()).unwrap_err().starts_with("update-mime-database: "));
+    let real = desktop::XdgMime::new(temp.path().into());
+    assert_eq!(
+        (real.program.to_str(), real.database_program.to_str()),
+        (Some("xdg-mime"), Some("update-mime-database"))
+    );
 }
 
 #[test]

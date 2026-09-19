@@ -13,9 +13,11 @@ impl Sandbox {
         for dir in ["bin", "config/hypr", "state", "prefix"] {
             fs::create_dir_all(sandbox.path(dir)).unwrap();
         }
-        let tool = sandbox.path("bin/xdg-mime");
-        fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
-        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+        for tool in ["bin/xdg-mime", "bin/update-mime-database"] {
+            let tool = sandbox.path(tool);
+            fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
+            fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+        }
         fs::write(sandbox.path("config/hypr/hyprland.lua"), "-- user's existing settings\n").unwrap();
         sandbox
     }
@@ -53,7 +55,8 @@ fn information_flags_print_and_exit_cleanly() {
     assert!(help.status.success() && stdout(&help).contains("--screenshot PATH"));
     assert_eq!(stdout(&sandbox.nap(&["--version"])), format!("nap {}\n", env!("CARGO_PKG_VERSION")));
     let mimes = stdout(&sandbox.nap(&["--mime-types"]));
-    assert!(mimes.lines().count() > 5 && mimes.lines().all(|line| line.starts_with("audio/")), "{mimes}");
+    assert!(mimes.lines().count() > 5 && mimes.lines().all(|line| line.contains('/')), "{mimes}");
+    assert!(mimes.contains("audio/flac") && mimes.contains("application/x-nap-tape"), "{mimes}");
 }
 
 #[test]
@@ -91,13 +94,14 @@ fn hyprland_rules_install_and_uninstall_in_a_temporary_config() {
 fn desktop_integration_installs_and_uninstalls_under_a_temporary_prefix() {
     let sandbox = Sandbox::new();
     let checkout = sandbox.path("checkout");
-    for file in ["target/release/nap", "nap.desktop", "hypr/nap.lua"] {
+    for file in ["target/release/nap", "nap.desktop", "nap-mime.xml", "hypr/nap.lua"] {
         fs::create_dir_all(checkout.join(file).parent().unwrap()).unwrap();
         fs::write(checkout.join(file), "stand-in").unwrap();
     }
     let installed = sandbox.nap(&["--install-desktop", checkout.to_str().unwrap()]);
     assert!(stdout(&installed).starts_with("nap installed"), "{installed:?}");
     assert!(sandbox.path("prefix/bin/nap").exists());
+    assert!(sandbox.path("prefix/share/mime/packages/nap.xml").exists());
     let removed = sandbox.nap(&["--uninstall-desktop"]);
     assert!(stdout(&removed).starts_with("nap removed"), "{removed:?}");
     assert!(!sandbox.path("prefix/bin/nap").exists());

@@ -17,8 +17,13 @@ pub const MIME_TYPES: &[&str] = &[
     "audio/aac",
     "audio/x-aiff",
     "audio/x-ms-wma",
+    // nap's own: a mixtape archive and its standalone track listing, defined in nap-mime.xml.
+    "application/x-nap-tape",
+    "application/x-nap-jcard",
 ];
 pub const DESKTOP: &str = "nap.desktop";
+/// Where the definitions of nap's own types are installed, under the prefix.
+pub const MIME_PACKAGE: &str = "share/mime/packages/nap.xml";
 
 pub fn config_home() -> PathBuf {
     home_dir("XDG_CONFIG_HOME", ".config")
@@ -38,16 +43,20 @@ pub fn prefix() -> PathBuf {
 pub trait MimeBackend {
     fn current(&self, mime: &str) -> Result<String, String>;
     fn set(&self, mime: &str, handler: &str) -> Result<(), String>;
+    /// Rebuild the MIME database in `mime_dir` after its packages change.
+    fn refresh(&self, mime_dir: &Path) -> Result<(), String>;
 }
 
 pub struct XdgMime {
     pub config: PathBuf,
     /// The `xdg-mime` to run; tests substitute a stand-in.
     pub program: PathBuf,
+    /// Likewise the `update-mime-database`.
+    pub database_program: PathBuf,
 }
 impl XdgMime {
     pub fn new(config: PathBuf) -> Self {
-        XdgMime { config, program: "xdg-mime".into() }
+        XdgMime { config, program: "xdg-mime".into(), database_program: "update-mime-database".into() }
     }
 
     /// Forget the default for `mime`: xdg-mime has no command for it, so edit `mimeapps.list`.
@@ -75,6 +84,13 @@ impl MimeBackend for XdgMime {
         let status =
             Command::new(&self.program).args(["default", handler, mime]).status().map_err(|e| e.to_string())?;
         if status.success() { Ok(()) } else { Err(format!("xdg-mime failed for {mime}")) }
+    }
+    fn refresh(&self, mime_dir: &Path) -> Result<(), String> {
+        let status = Command::new(&self.database_program)
+            .arg(mime_dir)
+            .status()
+            .map_err(|e| format!("update-mime-database: {e}"))?;
+        if status.success() { Ok(()) } else { Err("update-mime-database failed".into()) }
     }
 }
 
@@ -156,7 +172,7 @@ pub fn install_desktop(
     backend: &impl MimeBackend,
 ) -> Result<(), String> {
     // Check all required sources before changing the installation.
-    for file in ["target/release/nap", "nap.desktop", "hypr/nap.lua"] {
+    for file in ["target/release/nap", "nap.desktop", "nap-mime.xml", "hypr/nap.lua"] {
         if !checkout.join(file).is_file() {
             return Err(format!("missing {file}; build the release binary first"));
         }
@@ -167,17 +183,23 @@ pub fn install_desktop(
     install::install(&config.join("hypr"), install::Source::Link(checkout.join("hypr/nap.lua")))?;
     symlink(&checkout.join("target/release/nap"), &prefix.join("bin/nap"))?;
     symlink(&checkout.join("nap.desktop"), &prefix.join("share/applications/nap.desktop"))?;
+    // The desktop must know what a .tape is before nap can become its default.
+    symlink(&checkout.join("nap-mime.xml"), &prefix.join(MIME_PACKAGE))?;
+    backend.refresh(&prefix.join("share/mime"))?;
     install_mimes(backend, &state.join("nap/previous-audio-handlers.json"))
 }
 pub fn uninstall_desktop(prefix: &Path, config: &Path, state: &Path, backend: &impl MimeBackend) -> Result<(), String> {
     uninstall_mimes(backend, &state.join("nap/previous-audio-handlers.json"))?;
     install::uninstall(&config.join("hypr"))?;
-    for file in [prefix.join("bin/nap"), prefix.join("share/applications/nap.desktop")] {
+    let package = prefix.join(MIME_PACKAGE);
+    let defined = fs::symlink_metadata(&package).is_ok();
+    for file in [prefix.join("bin/nap"), prefix.join("share/applications/nap.desktop"), package] {
         if fs::symlink_metadata(&file).is_ok() {
             fs::remove_file(file).map_err(|e| e.to_string())?;
         }
     }
-    Ok(())
+    // Forget the types too, but only if this prefix ever defined them.
+    if defined { backend.refresh(&prefix.join("share/mime")) } else { Ok(()) }
 }
 
 pub fn reload_hyprland() -> Result<(), String> {
