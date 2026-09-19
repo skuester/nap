@@ -52,13 +52,13 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
 
 ## The deck
 
-- **Label underline:** click or drag to seek. A small amber tick marks your bookmark.
+- **Label's ruled line:** click or drag to seek; it inks over as the tape plays. A small diamond marks your bookmark.
 - **REW / FWD:** tap to skip five seconds; hold to wind at 20 audio seconds per second.
 - **PLAY / PAUSE, STOP, OPEN:** physical-style keys. Stop returns to the beginning.
 - **Lower cassette ridges:** click, drag, or scroll to set the player's volume.
-- **LOOP / MARK:** toggle repeat or save your place.
+- **LOOP / MARK:** toggle repeat or save your place. LOOP latches down; each key's lamp lights while it applies.
 - **Plastic window:** a waveform drawn from decoded PCM samples, with no synthetic animation.
-  Reels rotate only while playing; tape transfers from the left spool to the right.
+  Reels rotate only while playing, the thinner pack turning faster; tape transfers from the left spool to the right.
 
 The open button replaces the loaded file; cancellation leaves it alone. Dragging
 a local file onto the window loads it. nap plays one file at a time, without a
@@ -92,7 +92,9 @@ one explicit bookmark per file, and quitting does not overwrite it.
 nap reads `background`, `foreground`, and `accent` from the active theme's
 `colors.toml`, checking `$XDG_STATE_HOME/omarchy/current/theme` first, then
 `$XDG_CONFIG_HOME/omarchy/current/theme` (with standard home-directory defaults).
-The label keeps its warm paper color. Restart nap after changing themes.
+Every surface is mixed from those three colors, so the deck follows light and dark
+themes alike: the label is foreground-colored paper printed in background-colored ink.
+Restart nap after changing themes.
 
 The app ID is `nap`. The installed [Hyprland 0.55+ Lua rules](hypr/nap.lua)
 float and center the window, preserve its 720:504 aspect ratio on resize, and

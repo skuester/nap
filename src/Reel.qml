@@ -1,56 +1,49 @@
 import QtQuick
 
+// One spool: a tape pack that grows and shrinks, around a toothed hub that turns only while spinning.
 Item {
     id: reel
     property bool spinning: false
     property real tape: 0.8
-    property color ink: "#dcd8c9"
-    width: 130; height: 130
+    property int wind: 0
+    property color hub: "#dcd8c9"
+    property color hole: "#0d1012"
+    property color pack: "#342e29"
+    property color groove: "#51463a"
+    readonly property real packSize: 58 + Math.max(0, Math.min(1, tape)) * 58
+    width: 118; height: 118
     Rectangle {
         anchors.centerIn: parent
-        width: 126; height: width; radius: width / 2
-        color: "#0d1012"; border.color: "#484339"; border.width: 1
-    }
-    Rectangle {
-        anchors.centerIn: parent
-        width: 66 + reel.tape * 54; height: width; radius: width / 2
-        color: "#342e29"; border.color: "#51463a"; border.width: 2
-        Behavior on width { NumberAnimation { duration: 500 } }
+        width: reel.packSize; height: width; radius: width / 2
+        color: reel.pack; border.color: reel.groove
         Repeater {
-            model: 7
+            model: 4
             Rectangle {
                 required property int index
                 anchors.centerIn: parent
-                width: parent.width - 6 - index * 4; height: width; radius: width / 2
-                color: "transparent"; border.color: "#625442"; opacity: 0.24
+                visible: width > 56
+                width: parent.width - 10 - index * 12; height: width; radius: width / 2
+                color: "transparent"; border.color: reel.groove; opacity: 0.45
             }
         }
     }
     Item {
-        id: hub
-        anchors.centerIn: parent; width: 64; height: 64
-        NumberAnimation on rotation {
-            from: 0; to: 360; duration: 2800; loops: Animation.Infinite
-            running: true; paused: !reel.spinning
-        }
-        Rectangle {
-            anchors.fill: parent; radius: 32
-            color: reel.ink; border.color: "#8b897d"; border.width: 2
-        }
+        id: spindle
+        anchors.centerIn: parent; width: 52; height: 52
+        Rectangle { anchors.fill: parent; radius: 26; color: reel.hub }
+        Rectangle { anchors.centerIn: parent; width: 34; height: 34; radius: 17; color: reel.hole }
         Repeater {
             model: 6
             Item {
                 required property int index
                 anchors.fill: parent; rotation: index * 60
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter; y: 5
-                    width: 10; height: 15; radius: 3; color: "#272b2b"
-                }
+                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; y: 8; width: 6; height: 8; radius: 1; color: reel.hub }
             }
         }
-        Rectangle {
-            anchors.centerIn: parent; width: 22; height: 22; radius: 11
-            color: "#15191a"; border.color: "#99998c"; border.width: 3
-        }
+    }
+    // Tape speed is constant, so a thin pack turns faster than a full one. Side A turns anticlockwise.
+    FrameAnimation {
+        running: reel.spinning
+        onTriggered: spindle.rotation = (spindle.rotation - frameTime * 150 * 58 / reel.packSize * (reel.wind ? reel.wind * 9 : 1)) % 360
     }
 }
