@@ -99,6 +99,10 @@ fn unset_removes_only_our_default_entry() {
     );
 }
 
+/// Tests that write a script and then run it take turns. Otherwise one thread's fork can briefly
+/// inherit another's still-open script, and running a file open for writing fails (ETXTBSY).
+static STAND_INS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// An executable stand-in for a system tool, so nothing here touches the real desktop.
 fn script(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
@@ -110,6 +114,7 @@ fn script(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
 
 #[test]
 fn xdg_mime_is_driven_through_its_command_line() {
+    let _turn = STAND_INS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let temp = tempfile::tempdir().unwrap();
     let log = temp.path().join("calls");
     let logging = |name: &str, extra: &str| {
@@ -155,6 +160,7 @@ fn xdg_mime_is_driven_through_its_command_line() {
 
 #[test]
 fn hyprland_reload_reports_configuration_errors() {
+    let _turn = STAND_INS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let temp = tempfile::tempdir().unwrap();
     assert!(desktop::reload_hyprland_with(&script(temp.path(), "clean", "exit 0")).is_ok());
     let refuses = script(temp.path(), "refuses", "exit 1");

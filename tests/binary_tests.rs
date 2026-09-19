@@ -3,13 +3,20 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::{fs, os::unix::fs::PermissionsExt};
 
+/// Sandboxes write stand-in scripts that nap then runs, so tests holding one take turns. Otherwise
+/// one thread's fork can briefly inherit another's still-open script, and running a file that is
+/// open for writing fails (ETXTBSY).
+static STAND_INS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 struct Sandbox {
     temp: tempfile::TempDir,
+    _turn: std::sync::MutexGuard<'static, ()>,
 }
 
 impl Sandbox {
     fn new() -> Self {
-        let sandbox = Sandbox { temp: tempfile::tempdir().unwrap() };
+        let turn = STAND_INS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let sandbox = Sandbox { temp: tempfile::tempdir().unwrap(), _turn: turn };
         for dir in ["bin", "config/hypr", "state", "prefix"] {
             fs::create_dir_all(sandbox.path(dir)).unwrap();
         }
