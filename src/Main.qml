@@ -109,32 +109,32 @@ ApplicationWindow {
                 id: label
                 x: 30; y: 22; width: 580; height: 252; radius: 8
                 color: paper
-                Rectangle {
-                    x: 20; y: 16; width: 30; height: 30; radius: 3; color: "transparent"; border.color: ink; border.width: 2
-                    Text { anchors.centerIn: parent; text: "A"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: ink }
-                }
-                // A pictogram of the insert itself, cover art above lines of type, boxed like the side mark.
+                // The side mark doubles as the way into the insert: under the pointer it turns over to show
+                // a pictogram of the card, cover art above lines of type.
                 Rectangle {
                     id: insertBadge
                     objectName: "insertBadge"
-                    // Heavy strokes read darker than type of the same ink, so the badge rests lighter than the dim text.
-                    readonly property color faint: Qt.tint(paper, Qt.alpha(bg, 0.38))
-                    readonly property color mark: badgeArea.containsMouse ? paper : faint
-                    x: 530; y: 16; width: 30; height: 30; radius: 3; visible: deck.loaded
-                    color: badgeArea.containsMouse ? ink : "transparent"; border.color: badgeArea.containsMouse ? ink : faint; border.width: 2
-                    Rectangle { x: 7; y: 7; width: 7; height: 7; color: parent.mark }
-                    Rectangle { x: 16; y: 7; width: 7; height: 2; color: parent.mark }
-                    Rectangle { x: 16; y: 12; width: 7; height: 2; color: parent.mark }
-                    Rectangle { x: 7; y: 17; width: 16; height: 2; color: parent.mark }
-                    Rectangle { x: 7; y: 21; width: 11; height: 2; color: parent.mark }
+                    readonly property bool turned: badgeArea.containsMouse && deck.loaded
+                    x: 20; y: 16; width: 30; height: 30; radius: 3
+                    color: turned ? ink : "transparent"; border.color: ink; border.width: 2
+                    Text { visible: !parent.turned; anchors.centerIn: parent; text: "A"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: ink }
+                    Item {
+                        anchors.fill: parent; visible: parent.turned
+                        Rectangle { x: 7; y: 7; width: 7; height: 7; color: paper }
+                        Rectangle { x: 16; y: 7; width: 7; height: 2; color: paper }
+                        Rectangle { x: 16; y: 12; width: 7; height: 2; color: paper }
+                        Rectangle { x: 7; y: 17; width: 16; height: 2; color: paper }
+                        Rectangle { x: 7; y: 21; width: 11; height: 2; color: paper }
+                    }
                     MouseArea {
                         id: badgeArea
-                        anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; enabled: deck.loaded
+                        cursorShape: Qt.PointingHandCursor
                         onClicked: win.showInsert(true)
                         Accessible.role: Accessible.Button; Accessible.name: "Unfold the insert"
                     }
                 }
-                Text { x: 62; y: 17; width: deck.loaded ? 456 : 498; text: deck.filename; elide: Text.ElideMiddle; font.family: mono; font.pixelSize: 19; font.weight: Font.Bold; color: ink }
+                Text { x: 62; y: 17; width: 498; text: deck.filename; elide: Text.ElideMiddle; font.family: mono; font.pixelSize: 19; font.weight: Font.Bold; color: ink }
                 Rectangle { x: 20; y: 52; width: 540; height: 1; color: inkDim; opacity: 0.55 }
                 Text { x: 20; y: 59; width: 390; text: deck.loaded ? deck.detail : "Drop an audio file here, or press O to open one"; elide: Text.ElideRight; font.family: mono; font.pixelSize: 10; color: inkDim }
                 Text { x: 410; y: 58; width: 150; horizontalAlignment: Text.AlignRight; text: clock(deck.position) + " / " + clock(deck.duration); font.family: mono; font.pixelSize: 11; font.weight: Font.DemiBold; color: ink }
@@ -305,7 +305,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind. Drag or scroll the grooves under the tape to set the volume. Click the boxed icon on the label to read the tape's insert."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind. Drag or scroll the grooves under the tape to set the volume. Click the A on the label to read the tape's insert."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }
