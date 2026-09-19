@@ -29,13 +29,20 @@ fn cli_aliases_and_literal_files() {
         assert_eq!(o.start, 62500);
         assert!(o.paused);
         assert_eq!(o.volume, 0.4);
-        assert_eq!(o.path.unwrap().to_str(), Some("-song.wav"));
+        assert_eq!(o.paths[0].to_str(), Some("-song.wav"));
     }
+    // Several audio files line up into one tape; a .tape or .jcard comes alone.
+    let Action::Run(o) = parse(&["a.flac", "b.mp3", "--loop", "c.ogg"]).unwrap() else { panic!() };
+    assert_eq!(o.paths.iter().map(|p| p.to_str().unwrap()).collect::<Vec<_>>(), ["a.flac", "b.mp3", "c.ogg"]);
+    let Action::Run(o) = parse(&["mix.tape"]).unwrap() else { panic!() };
+    assert_eq!(o.paths.len(), 1);
     assert!(matches!(parse(&["--install-hyprland", "--link", "hypr/nap.lua"]).unwrap(), Action::Install(Some(_))));
     for args in [
         &["--time"][..],
         &["--volume", "NaN"],
-        &["a", "b"],
+        &["a.flac", "mix.tape"],
+        &["mix.jcard", "b.flac"],
+        &["one.tape", "two.tape"],
         &["--link", "a"],
         &["--install-hyprland", "--uninstall-hyprland"],
         &["--bogus"],

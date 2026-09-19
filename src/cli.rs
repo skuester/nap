@@ -3,16 +3,18 @@ use std::{ffi::OsString, path::PathBuf};
 
 pub const HELP: &str = "nap — Nice Audio Player
 
-usage: nap [options] [audio]
+usage: nap [options] [audio... | mix.tape | mix.jcard]
        nap --install-hyprland [--link path/to/hypr/nap.lua]
        nap --uninstall-hyprland
        nap --mime-types
+
+  several audio files open as one tape, in the order given
 
   --paused                  open paused
   --time, --start, --timestamp T  seconds, m:ss, h:mm:ss; overrides bookmark
   --ignore-bookmark         start at the beginning
   --volume N                initial volume, 0–100 (default 75)
-  --loop                    repeat playback
+  --loop                    repeat the file, or the whole tape
   --install-hyprland        install floating, centered, aspect-preserving rules
   --link PATH               symlink rules from checkout
   --uninstall-hyprland      remove rules and require line
@@ -21,14 +23,14 @@ usage: nap [options] [audio]
   -h, --help                show help
   -V, --version             show version
 
-keys: Space play/pause; S stop; arrows seek/volume; B bookmark;
-Shift+B remove bookmark; Enter return to bookmark; L loop; M mute;
-O open; ? help; Q quit.
+keys: Space play/pause; S stop; , . previous/next track; arrows seek/volume;
+B bookmark; Shift+B remove bookmark; Enter return to bookmark; L loop; M mute;
+V visualizer; I insert; Ctrl+S save the tape; O open; ? help; Q quit.
 ";
 
 #[derive(Debug, Serialize)]
 pub struct Options {
-    pub path: Option<PathBuf>,
+    pub paths: Vec<PathBuf>,
     pub paused: bool,
     pub start: i64,
     pub ignore: bool,
@@ -38,7 +40,15 @@ pub struct Options {
 }
 impl Default for Options {
     fn default() -> Self {
-        Self { path: None, paused: false, start: -1, ignore: false, volume: 0.75, looping: false, screenshot: None }
+        Self {
+            paths: Vec::new(),
+            paused: false,
+            start: -1,
+            ignore: false,
+            volume: 0.75,
+            looping: false,
+            screenshot: None,
+        }
     }
 }
 #[derive(Debug)]
@@ -102,10 +112,14 @@ struct Parser {
 
 impl Parser {
     fn file(&mut self, arg: OsString) -> Result<(), String> {
-        match self.options.path.replace(arg.into()) {
-            Some(_) => Err("open one audio file at a time".into()),
-            None => Ok(()),
+        // A tape or J-card is the whole programme; only audio files line up into one.
+        let path = PathBuf::from(arg);
+        let whole = |p: &PathBuf| matches!(crate::tape::kind(p), crate::tape::Kind::Archive | crate::tape::Kind::Index);
+        if !self.options.paths.is_empty() && (whole(&path) || self.options.paths.iter().any(whole)) {
+            return Err("open one tape at a time".into());
         }
+        self.options.paths.push(path);
+        Ok(())
     }
 
     /// Switches that take no value; false when `key` is not one.
@@ -141,7 +155,7 @@ impl Parser {
         if self.link.is_some() && !self.install {
             return Err("--link requires --install-hyprland".into());
         }
-        if (self.install || self.uninstall) && self.options.path.is_some() {
+        if (self.install || self.uninstall) && !self.options.paths.is_empty() {
             return Err("install commands do not accept audio files".into());
         }
         Ok(match (self.install, self.uninstall) {

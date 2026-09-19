@@ -9,7 +9,7 @@ ApplicationWindow {
     width: 720; height: 504
     minimumWidth: 480; minimumHeight: 336
     visible: true
-    title: deck.loaded ? deck.filename + " — nap" : "nap — Nice Audio Player"
+    title: deck.loaded ? (mixtape ? (tape.name || "Untitled tape") : deck.filename) + " — nap" : "nap — Nice Audio Player"
     color: bg
     // Every surface is mixed from the three Omarchy colours, so the deck follows any theme, light or dark.
     readonly property color bg: deck.palette.background
@@ -27,9 +27,14 @@ ApplicationWindow {
     readonly property color stripe: contrast(accent, paper) >= 1.12 ? accent : inkDim
     readonly property color accentInk: contrast(accent, fg) >= contrast(accent, bg) ? fg : bg
     readonly property string mono: "monospace"
-    readonly property string lengthClass: deck.duration > 0 ? "C-" + Math.max(1, Math.round(deck.duration / 60000)) : ""
+    // Tapes are sold by their length in minutes: a C-60, a C-90.
+    readonly property real tapeSeconds: mixtape ? (tape.seconds || 0) : deck.duration / 1000
+    readonly property string lengthClass: tapeSeconds > 0 ? "C-" + Math.max(1, Math.round(tapeSeconds / 60)) : ""
     readonly property int winding: forwardKey.down ? 1 : rewindKey.down ? -1 : 0
     property bool helpVisible: false
+    readonly property bool typing: jcard.typing
+    readonly property var tape: deck.tape
+    readonly property bool mixtape: tape.mixtape === true
     property bool insertVisible: false
     property var insertCard: ({})
     // The insert is read from the file only once someone pulls it out.
@@ -51,33 +56,40 @@ ApplicationWindow {
         return (s >= 3600 ? Math.floor(s / 3600) + ":" : "") + (s >= 3600 ? String(Math.floor(s / 60) % 60).padStart(2, "0") : String(Math.floor(s / 60)).padStart(2, "0")) + ":" + String(s % 60).padStart(2, "0")
     }
     function open() { picker.open() }
-    Shortcut { sequence: "Space"; onActivated: deck.toggle() }
-    Shortcut { sequence: "S"; onActivated: deck.stop() }
-    Shortcut { sequences: [",", "<"]; onActivated: deck.previous() }
-    Shortcut { sequences: [".", ">"]; onActivated: deck.next() }
-    Shortcut { sequence: "Left"; onActivated: deck.skip(-5) }
-    Shortcut { sequence: "Right"; onActivated: deck.skip(5) }
-    Shortcut { sequence: "Up"; onActivated: win.insertVisible ? jcard.scroll(-40) : deck.setVolume(deck.volume + 0.05) }
-    Shortcut { sequence: "Down"; onActivated: win.insertVisible ? jcard.scroll(40) : deck.setVolume(deck.volume - 0.05) }
-    Shortcut { sequence: "PgUp"; enabled: win.insertVisible; onActivated: jcard.scroll(-320) }
-    Shortcut { sequence: "PgDown"; enabled: win.insertVisible; onActivated: jcard.scroll(320) }
-    Shortcut { sequence: "V"; onActivated: deck.cycleVisualizer() }
-    Shortcut { sequence: "I"; onActivated: win.showInsert(!win.insertVisible) }
-    Shortcut { sequence: "B"; onActivated: deck.saveBookmark() }
-    Shortcut { sequence: "Shift+B"; onActivated: deck.saveBookmark(true) }
-    Shortcut { sequence: "Return"; onActivated: if (deck.bookmark >= 0) deck.seek(deck.bookmark) }
-    Shortcut { sequence: "L"; onActivated: deck.toggleLoop() }
-    Shortcut { sequence: "M"; onActivated: deck.toggleMute() }
-    Shortcut { sequence: "O"; onActivated: win.open() }
-    Shortcut { sequence: "Ctrl+O"; onActivated: win.open() }
-    Shortcut { sequence: "Q"; onActivated: Qt.quit() }
-    Shortcut { sequence: "?"; onActivated: win.helpVisible = !win.helpVisible }
-    Shortcut { sequence: "K"; onActivated: win.helpVisible = !win.helpVisible }
-    Shortcut { sequence: "Escape"; onActivated: if (win.helpVisible) win.helpVisible = false; else win.showInsert(false) }
+    Shortcut { enabled: !win.typing; sequence: "Space"; onActivated: deck.toggle() }
+    Shortcut { enabled: !win.typing; sequence: "S"; onActivated: deck.stop() }
+    Shortcut { enabled: !win.typing; sequences: [",", "<"]; onActivated: deck.previous() }
+    Shortcut { enabled: !win.typing; sequences: [".", ">"]; onActivated: deck.next() }
+    Shortcut { enabled: !win.typing; sequence: "Left"; onActivated: deck.skip(-5) }
+    Shortcut { enabled: !win.typing; sequence: "Right"; onActivated: deck.skip(5) }
+    Shortcut { enabled: !win.typing; sequence: "Up"; onActivated: win.insertVisible ? jcard.scroll(-40) : deck.setVolume(deck.volume + 0.05) }
+    Shortcut { enabled: !win.typing; sequence: "Down"; onActivated: win.insertVisible ? jcard.scroll(40) : deck.setVolume(deck.volume - 0.05) }
+    Shortcut { sequence: "PgUp"; enabled: !win.typing && (win.insertVisible); onActivated: jcard.scroll(-320) }
+    Shortcut { sequence: "PgDown"; enabled: !win.typing && (win.insertVisible); onActivated: jcard.scroll(320) }
+    Shortcut { enabled: !win.typing; sequence: "V"; onActivated: deck.cycleVisualizer() }
+    Shortcut { enabled: !win.typing && deck.loaded; sequence: "Ctrl+S"; onActivated: saver.open() }
+    Shortcut { enabled: !win.typing && win.insertVisible && jcard.selected >= 0; sequences: ["Delete", "Backspace"]; onActivated: { const gone = jcard.selected; jcard.selected = -1; deck.removeTrack(gone) } }
+    Shortcut { enabled: !win.typing; sequence: "I"; onActivated: win.showInsert(!win.insertVisible) }
+    Shortcut { enabled: !win.typing; sequence: "B"; onActivated: deck.saveBookmark() }
+    Shortcut { enabled: !win.typing; sequence: "Shift+B"; onActivated: deck.saveBookmark(true) }
+    Shortcut { enabled: !win.typing; sequence: "Return"; onActivated: if (deck.bookmark >= 0) deck.seek(deck.bookmark) }
+    Shortcut { enabled: !win.typing; sequence: "L"; onActivated: deck.toggleLoop() }
+    Shortcut { enabled: !win.typing; sequence: "M"; onActivated: deck.toggleMute() }
+    Shortcut { enabled: !win.typing; sequence: "O"; onActivated: win.open() }
+    Shortcut { enabled: !win.typing; sequence: "Ctrl+O"; onActivated: win.open() }
+    Shortcut { enabled: !win.typing; sequence: "Q"; onActivated: Qt.quit() }
+    Shortcut { enabled: !win.typing; sequence: "?"; onActivated: win.helpVisible = !win.helpVisible }
+    Shortcut { enabled: !win.typing; sequence: "K"; onActivated: win.helpVisible = !win.helpVisible }
+    Shortcut { enabled: !win.typing; sequence: "Escape"; onActivated: if (win.helpVisible) win.helpVisible = false; else win.showInsert(false) }
     FileDialog {
-        id: picker; title: "Load a tape"
-        nameFilters: ["Audio (*.mp3 *.flac *.wav *.ogg *.opus *.m4a *.aac *.aiff *.aif *.wma *.ape *.alac *.wv)", "All files (*)"]
-        onAccepted: deck.openUrl(selectedFile)
+        id: picker; title: "Load a tape"; fileMode: FileDialog.OpenFiles
+        nameFilters: ["Audio and tapes (*.mp3 *.flac *.wav *.ogg *.opus *.m4a *.aac *.aiff *.aif *.wma *.ape *.alac *.wv *.tape *.jcard)", "All files (*)"]
+        onAccepted: deck.openUrls(selectedFiles)
+    }
+    FileDialog {
+        id: saver; title: "Save this tape"; fileMode: FileDialog.SaveFile
+        nameFilters: ["Tape, with its audio inside (*.tape)", "J-card, a track listing only (*.jcard)"]; defaultSuffix: "tape"
+        onAccepted: deck.exportTape(selectedFile)
     }
     Connections {
         target: deck
@@ -85,7 +97,7 @@ ApplicationWindow {
         function onInsertChanged() { if (win.insertVisible) win.showInsert(true); else win.insertCard = ({}) }
     }
     Timer { id: toastTimer; interval: 6500; onTriggered: win.message = "" }
-    DropArea { id: dropZone; anchors.fill: parent; onDropped: drop => { if (drop.hasUrls) deck.openUrl(drop.urls[0]) } }
+    DropArea { id: dropZone; anchors.fill: parent; onDropped: drop => { if (drop.hasUrls) deck.openUrls(drop.urls) } }
 
     Item {
         id: design
@@ -137,9 +149,9 @@ ApplicationWindow {
                         Accessible.role: Accessible.Button; Accessible.name: "Unfold the insert"
                     }
                 }
-                Text { x: 62; y: 17; width: 498; text: deck.filename; elide: Text.ElideMiddle; font.family: mono; font.pixelSize: 19; font.weight: Font.Bold; color: ink }
+                Text { x: 62; y: 17; width: 498; text: win.mixtape ? (win.tape.name || "Untitled tape") : deck.filename; elide: Text.ElideMiddle; font.family: mono; font.pixelSize: 19; font.weight: Font.Bold; color: ink }
                 Rectangle { x: 20; y: 52; width: 540; height: 1; color: inkDim; opacity: 0.55 }
-                Text { x: 20; y: 59; width: 390; text: deck.loaded ? deck.detail : "Drop an audio file here, or press O to open one"; elide: Text.ElideRight; font.family: mono; font.pixelSize: 10; color: inkDim }
+                Text { x: 20; y: 59; width: 390; text: !deck.loaded ? "Drop audio or a tape here, or press O to open one" : win.mixtape ? (win.tape.index + 1) + " of " + win.tape.tracks.length + "  ·  " + deck.filename : deck.detail; elide: Text.ElideRight; font.family: mono; font.pixelSize: 10; color: inkDim }
                 Text { x: 410; y: 58; width: 150; horizontalAlignment: Text.AlignRight; text: clock(deck.position) + " / " + clock(deck.duration); font.family: mono; font.pixelSize: 11; font.weight: Font.DemiBold; color: ink }
                 // The label's last ruled line is the timeline: it inks over as the tape plays.
                 Slider {
@@ -189,6 +201,7 @@ ApplicationWindow {
                         color: Qt.tint(well, Qt.alpha(fg, 0.04)); border.color: Qt.alpha(fg, 0.14)
                         mode: deck.visualizer; playing: deck.playing
                         wave: deck.wave; spectrum: deck.spectrum; levels: deck.levels; position: deck.position
+                        progress: deck.progress; progressLabel: deck.progressLabel
                         glow: win.glow; fg: win.fg; paper: win.paper; ink: win.ink; stripe: win.stripe; mono: win.mono
                         onCycled: deck.cycleVisualizer()
                     }
@@ -252,12 +265,22 @@ ApplicationWindow {
         }
         Insert {
             id: jcard
+            objectName: "jcard"
             anchors.fill: parent; z: 5
-            open: win.insertVisible; card: win.insertCard; filename: deck.filename
+            open: win.insertVisible; filename: deck.filename; tape: win.tape
+            // The notes follow the track picked out in the listing, or else the one that is up.
+            card: selected >= 0 && win.tape.tracks && selected < win.tape.tracks.length ? deck.insertOf(selected) : win.insertCard
+            onFilesDropped: urls => deck.openUrls(urls, true)
+            onTapeDropped: urls => deck.openUrls(urls)
+            onCoverDropped: image => deck.setCover(image)
+            onRenamed: name => deck.renameTape(name)
+            onPlayRequested: index => { selected = -1; deck.playTrack(index) }
+            onMoveRequested: (from, to) => deck.moveTrack(from, to)
+            onRemoveRequested: index => { selected = -1; deck.removeTrack(index) }
             lengthClass: win.lengthClass
             paper: win.paper; ink: win.ink; inkDim: win.inkDim; stripe: win.stripe; scrim: Qt.alpha(bg, 0.88); mono: win.mono
             onDismissed: win.showInsert(false)
-            onFolderRequested: deck.openFolder()
+            onFolderRequested: deck.openFolder(shown)
         }
     }
     Rectangle {
@@ -275,7 +298,7 @@ ApplicationWindow {
             scale: Math.min(1, (parent.height - 32) / implicitHeight)
             Text { text: "Keys"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: fg; bottomPadding: 6 }
             Repeater {
-                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop where the tape is"], [", / .", "Previous / next track start"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["V", "Change the visualizer"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
+                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop where the tape is"], [", / .", "Previous / next track start"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["V", "Change the visualizer"], ["Ctrl+S", "Save the tape"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
                 Row {
                     required property var modelData
                     width: parent.width
@@ -283,7 +306,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. Drag or scroll the grooves under the tape to set the volume. Click the A on the label to read the tape's insert, or the display between the reels to change it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. Drag or scroll the grooves under the tape to set the volume. Click the A on the label to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }

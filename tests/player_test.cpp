@@ -89,6 +89,64 @@ private slots:
         p.openFile(directory.filePath("missing.wav"));
         QVERIFY(notices.last()[0].toString().contains("Cannot open"));
     }
+    void mixtape() {
+        Player p; p.setVolume(0); QSignalSpy notices(&p, &Player::notice);
+        const QString second = directory.filePath("Second.wav");
+        QVERIFY(QFile::copy(audio, second));
+        const QString first = QFileInfo(audio).fileName();
+        const auto index = [&p] { return p.tape()["index"].toInt(); };
+        const auto files = [&p] { QStringList names; for (const auto &t : p.tape()["tracks"].toList()) names << t.toMap()["file"].toString(); return names; };
+        p.load({audio, second}, true);
+        QTRY_COMPARE(p.duration(), 12000);
+        QCOMPARE(files(), QStringList({first, "Second.wav"}));
+        QVERIFY(p.tape()["mixtape"].toBool()); QVERIFY(!p.tape()["dirty"].toBool()); QCOMPARE(index(), 0);
+
+        // With the head lifted, NEXT and PREV walk the loop of tracks and leave it lifted.
+        p.stop(); p.next();
+        QTRY_COMPARE(p.filename(), QString("Second.wav")); QTRY_COMPARE(p.duration(), 12000);
+        QVERIFY(p.stopped()); QCOMPARE(index(), 1);
+        p.next(); QTRY_COMPARE(p.filename(), first); QTRY_COMPARE(p.duration(), 12000); QVERIFY(p.stopped());
+        p.previous(); QTRY_COMPARE(p.filename(), QString("Second.wav")); QTRY_COMPARE(p.duration(), 12000);
+        p.seek(8000); p.previous(); QCOMPARE(p.position(), 0); QCOMPARE(index(), 1);
+
+        // A track running out plays the next; the tape running out stops, cued back at its top.
+        p.playTrack(0); QTRY_VERIFY(p.playing()); QCOMPARE(index(), 0);
+        p.seek(11850); QTRY_COMPARE_WITH_TIMEOUT(index(), 1, 5000); QTRY_VERIFY_WITH_TIMEOUT(p.playing(), 5000);
+        p.seek(11850); QTRY_VERIFY_WITH_TIMEOUT(p.stopped(), 5000); QTRY_COMPARE(index(), 0);
+        QTRY_COMPARE(p.filename(), first);
+        // Looping, it starts over instead.
+        p.toggleLoop(); p.playTrack(1); QTRY_VERIFY(p.playing());
+        p.seek(11850); QTRY_COMPARE_WITH_TIMEOUT(index(), 0, 5000); QTRY_VERIFY_WITH_TIMEOUT(p.playing(), 5000);
+        p.toggleLoop(); p.stop();
+
+        p.renameTape("Test Mix"); p.moveTrack(1, 0);
+        QCOMPARE(files(), QStringList({"Second.wav", first})); QCOMPARE(index(), 1); QVERIFY(p.tape()["dirty"].toBool());
+        p.setCover(QUrl::fromLocalFile(audio));
+        QCOMPARE(notices.last()[0].toString(), QString("Drop an image to use as the cover"));
+        QString listed;
+        for (const auto &row : p.insertOf(0)["file"].toList()) if (row.toList().first().toString() == "File") listed = row.toList().last().toString();
+        QCOMPARE(listed, QString("Second.wav"));
+        p.openUrls({QUrl::fromLocalFile(second)}, true); QCOMPARE(files().size(), 3);
+        // Taking away the track that is up puts the next one under the head.
+        p.removeTrack(1); QCOMPARE(files(), QStringList({"Second.wav", "Second.wav"}));
+        QTRY_COMPARE(p.filename(), QString("Second.wav")); QTRY_COMPARE(p.duration(), 12000);
+
+        const QString saved = directory.filePath("Test Mix.tape");
+        p.exportTape(QUrl::fromLocalFile(saved));
+        QTRY_VERIFY_WITH_TIMEOUT(p.progress() < 0 && QFile::exists(saved), 5000);
+        QCOMPARE(notices.last()[0].toString(), QString("Saved Test Mix.tape")); QVERIFY(!p.tape()["dirty"].toBool());
+        p.load({audio}); QTRY_COMPARE(p.duration(), 12000); QVERIFY(!p.tape()["mixtape"].toBool());
+        p.load({saved}, true);
+        QTRY_COMPARE_WITH_TIMEOUT(p.tape()["name"].toString(), QString("Test Mix"), 5000);
+        QTRY_COMPARE(p.duration(), 12000); QCOMPARE(files(), QStringList({"Second.wav", "Second.wav"}));
+        QVERIFY(p.tape()["tracks"].toList().first().toMap()["path"].toString().startsWith(QDir::tempPath()));
+        QDesktopServices::setUrlHandler("file", this, "openedUrl");
+        p.openFolder(0); QVERIFY(opened.toLocalFile().startsWith(QDir::tempPath()));
+        QDesktopServices::unsetUrlHandler("file");
+        p.load({directory.filePath("absent.tape")});
+        QTRY_VERIFY_WITH_TIMEOUT(notices.last()[0].toString().contains("absent.tape"), 5000);
+        p.playTrack(9); QCOMPARE(notices.last()[0].toString(), QString("No such track"));
+    }
     void keyboardAndWindow() {
         Player p; p.setVolume(0);
         QQmlApplicationEngine engine;
@@ -140,6 +198,18 @@ private slots:
         p.toggle(); QTest::qWait(120);
         QVERIFY(w->grabWindow().save("build/playing-preview.png"));
         p.stop();
+        // The insert as a mixtape's track listing: pick a row out, retitle the tape, remove a track.
+        const QString flip = directory.filePath("Flip side.wav"); QVERIFY(QFile::copy(audio, flip));
+        p.load({audio, flip}, true); QTRY_COMPARE(p.duration(), 12000);
+        QTest::keyClick(w, Qt::Key_I); QTest::qWait(700);
+        auto *card = w->findChild<QQuickItem *>("jcard"); QVERIFY(card);
+        card->setProperty("selected", 1);
+        QCOMPARE(card->property("trackTitle").toString(), QString("Flip side.wav"));
+        p.renameTape("Flip Mix"); QCOMPARE(card->property("title").toString(), QString("Flip Mix"));
+        QTest::qWait(50); QVERIFY(w->grabWindow().save("build/mixtape-preview.png"));
+        QTest::keyClick(w, Qt::Key_Delete); QCOMPARE(p.tape()["tracks"].toList().size(), 1);
+        QCOMPARE(card->property("selected").toInt(), -1);
+        QTest::keyClick(w, Qt::Key_I); QVERIFY(!w->property("insertVisible").toBool());
         w->resize(480, 336); QTest::qWait(100);
         QVERIFY(!w->grabWindow().isNull());
         QCOMPARE(w->minimumWidth() * 504, w->minimumHeight() * 720);

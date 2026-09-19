@@ -62,6 +62,7 @@ fn mistakes_exit_with_status_two_and_say_why() {
     for (args, reason) in [
         (vec!["--volume", "101"], "volume must be between 0 and 100"),
         (vec!["--bogus"], "unknown option --bogus"),
+        (vec!["a.flac", "mix.tape"], "open one tape at a time"),
         (vec!["/does/not/exist.wav"], "not a readable file"),
         (vec!["--install-desktop", "/does/not/exist"], "nap: "),
     ] {
@@ -111,4 +112,28 @@ fn the_deck_renders_offscreen_with_a_file_loaded() {
         sandbox.nap(&["--paused", "--volume", "0", "--screenshot", image.to_str().unwrap(), tape.to_str().unwrap()]);
     assert!(output.status.success(), "{output:?}");
     assert!(fs::read(&image).unwrap().starts_with(b"\x89PNG"));
+}
+
+#[test]
+fn several_files_and_a_saved_tape_both_load() {
+    let sandbox = Sandbox::new();
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let (a, b) = (fixtures.join("silence.flac"), fixtures.join("silence.ogg"));
+    let image = sandbox.path("two.png");
+    let common = ["--paused", "--volume", "0", "--screenshot", image.to_str().unwrap()];
+    let output = sandbox.nap(&[&common[..], &[a.to_str().unwrap(), b.to_str().unwrap()]].concat());
+    assert!(output.status.success() && image.is_file(), "{output:?}");
+
+    // A tape made by hand, the way the format invites: a folder, an index, and tar.
+    let folder = sandbox.path("Handmade");
+    fs::create_dir_all(&folder).unwrap();
+    fs::copy(&a, folder.join("one.flac")).unwrap();
+    fs::write(folder.join("_index.jcard"), "#EXTM3U\n#PLAYLIST:Handmade\n\none.flac\n").unwrap();
+    let tape = sandbox.path("Handmade.tape");
+    let tarred =
+        Command::new("tar").arg("-cf").arg(&tape).arg("-C").arg(sandbox.path("")).arg("Handmade").status().unwrap();
+    assert!(tarred.success());
+    fs::remove_file(&image).unwrap();
+    let output = sandbox.nap(&[&common[..], &[tape.to_str().unwrap()]].concat());
+    assert!(output.status.success() && image.is_file(), "{output:?}");
 }

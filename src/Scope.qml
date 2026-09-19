@@ -13,6 +13,10 @@ Rectangle {
     property var spectrum: []
     property var levels: []
     property real position: 0
+    // While a tape is being packed or unpacked the display becomes its progress bar.
+    property real progress: -1
+    property string progressLabel: ""
+    readonly property bool busy: progress >= 0
     property color glow: "#89b4fa"
     property color fg: "#cdd6f4"
     property color paper: "#d9d5c5"
@@ -99,7 +103,7 @@ Rectangle {
 
     Item {
         x: 9; y: 9; width: 191; height: 67
-        visible: scope.mode === "scope"
+        visible: scope.mode === "scope" && !scope.busy
         Repeater {
             model: 48
             Rectangle {
@@ -113,7 +117,7 @@ Rectangle {
     }
     Item {
         x: 9; y: 9; width: 191; height: 67
-        visible: scope.mode === "bars"
+        visible: scope.mode === "bars" && !scope.busy
         Repeater {
             model: scope.barCount
             Item {
@@ -140,7 +144,7 @@ Rectangle {
     // The cell grid: gaps cut across whatever the scope or analyzer drew.
     Item {
         x: 9; y: 9; width: 191; height: 67
-        visible: scope.mode === "scope" || scope.mode === "bars"
+        visible: (scope.mode === "scope" || scope.mode === "bars") && !scope.busy
         Repeater {
             model: scope.rows - 1
             Rectangle { required property int index; y: index * 4 + 3; width: parent.width; height: 1; color: scope.color }
@@ -195,7 +199,7 @@ Rectangle {
     }
     Row {
         x: 9; y: 9; spacing: 5
-        visible: scope.mode === "vu"
+        visible: scope.mode === "vu" && !scope.busy
         Meter { channel: "L"; deflection: scope.needle[0]; peaking: scope.over[0] > 0 }
         Meter { channel: "R"; deflection: scope.needle[1]; peaking: scope.over[1] > 0 }
     }
@@ -204,7 +208,7 @@ Rectangle {
     Item {
         id: panel
         x: 9; y: 9; width: 191; height: 67
-        visible: scope.mode === "peak"
+        visible: scope.mode === "peak" && !scope.busy
         readonly property int segments: 30
         // Small steps glide and seeks whirr: whichever of velocity and duration is quicker wins.
         property real seconds: visible ? scope.position / 1000 : 0
@@ -284,7 +288,7 @@ Rectangle {
     Item {
         id: voiceprint
         x: 9; y: 9; width: 191; height: 67
-        visible: scope.mode === "spectrogram"
+        visible: scope.mode === "spectrogram" && !scope.busy
         property int head: 0
         readonly property var shades: ["transparent", Qt.tint(scope.color, Qt.alpha(scope.glow, 0.28)), Qt.tint(scope.color, Qt.alpha(scope.glow, 0.55)), scope.glow, Qt.tint(scope.glow, Qt.alpha(scope.fg, 0.55)), scope.fg]
         function clear() { for (let i = 0; i < columns.count; i++) if (columns.itemAt(i)) columns.itemAt(i).cells = [] }
@@ -315,8 +319,29 @@ Rectangle {
         Timer { interval: 60; repeat: true; running: voiceprint.visible && scope.playing; onTriggered: voiceprint.advance() }
     }
 
+    Item {
+        id: gauge
+        x: 9; y: 9; width: 191; height: 67
+        visible: scope.busy
+        readonly property int lit: Math.round(scope.progress * 48)
+        Text { width: parent.width - 34; text: scope.progressLabel; elide: Text.ElideMiddle; font.family: scope.mono; font.pixelSize: 9; color: Qt.alpha(scope.fg, 0.75) }
+        Text { anchors.right: parent.right; text: Math.round(scope.progress * 100) + "%"; font.family: scope.mono; font.pixelSize: 9; color: scope.glow }
+        Repeater {
+            model: 48
+            Column {
+                id: stack
+                required property int index
+                x: index * 4; y: 24; spacing: 1
+                Repeater {
+                    model: 7
+                    Rectangle { width: 3; height: 3; color: stack.index >= gauge.lit ? Qt.alpha(scope.fg, 0.07) : stack.index >= gauge.lit - 2 ? scope.fg : stack.index < 16 ? Qt.tint(scope.color, Qt.alpha(scope.glow, 0.55)) : scope.glow }
+                }
+            }
+        }
+    }
+
     MouseArea {
-        anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+        anchors.fill: parent; cursorShape: Qt.PointingHandCursor; enabled: !scope.busy
         onClicked: scope.cycled()
         Accessible.role: Accessible.Button; Accessible.name: "Change the visualizer"
     }

@@ -9,7 +9,7 @@ unsafe extern "C" {
 }
 
 fn play(options: &Options) -> Result<i32, String> {
-    if let Some(path) = &options.path {
+    for path in &options.paths {
         if !path.is_file() {
             return Err(format!("not a readable file: {}", path.display()));
         }

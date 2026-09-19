@@ -2,6 +2,7 @@
 #include <QAudioBuffer>
 #include <QDesktopServices>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QMediaMetaData>
 #include <vector>
 
@@ -10,14 +11,21 @@ static constexpr int BandCount = 24, AnalysisFrames = 2048;
 Player::Player(QObject *parent) : QObject(parent) {
     scene = core.request({{"op", "visualizer"}})["name"].toString();
     media.setAudioOutput(&output);
+    poller.setInterval(40);
+    connect(&poller, &QTimer::timeout, this, &Player::poll);
     media.setAudioBufferOutput(&buffers);
     connect(&media, &QMediaPlayer::positionChanged, this, &Player::changed);
     connect(&media, &QMediaPlayer::durationChanged, this, &Player::changed);
     connect(&media, &QMediaPlayer::metaDataChanged, this, &Player::changed);
     connect(&media, &QMediaPlayer::playbackStateChanged, this, [this] {
         if (!playing()) { samples.clear(); bands.clear(); needles.clear(); emit waveChanged(); }
-        // The tape ran out under a playing head: it lifts, as a deck's auto-stop would.
-        if (media.playbackState() == QMediaPlayer::StoppedState && deck == "playing") drive("ended");
+        // A track ran out under a playing head. The core says what is next; at the end of the tape
+        // the head lifts, as a deck's auto-stop would.
+        if (media.playbackState() == QMediaPlayer::StoppedState && deck == "playing") {
+            const auto next = core.request({{"op", "ended"}, {"looping", repeat}});
+            if (!next["play"].toBool()) drive("ended");
+            if (trackCount() > 1) cue(next, next["play"].toBool());
+        }
         emit changed();
     });
     connect(&media, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString &s) {
@@ -29,7 +37,8 @@ Player::Player(QObject *parent) : QObject(parent) {
             loading = false;
             if (pending >= 0) seek(pending);
             pending = -1;
-            drive("loaded", startPaused);
+            // A track found with the head lifted stays that way.
+            if (!lifted) drive("loaded", startPaused);
         }
         emit changed();
     });
@@ -76,7 +85,7 @@ QString Player::detail() const {
     if (!size.isEmpty()) bits << size;
     return bits.join("  ·  ");
 }
-void Player::openFile(const QString &file, bool paused, qint64 start, bool ignore) {
+void Player::openFile(const QString &file, bool paused, qint64 start, bool ignore, bool headLifted) {
     const auto result = core.request({{"op", "open"}, {"path", file}, {"start", start}, {"ignore", ignore}});
     if (result.contains("error")) { emit notice(result["error"].toString()); return; }
     media.stop();
@@ -86,6 +95,7 @@ void Player::openFile(const QString &file, bool paused, qint64 start, bool ignor
     mark = result["mark"].toInteger(-1);
     pending = result["pending"].toInteger(-1);
     startPaused = paused;
+    lifted = headLifted;
     loading = true;
     deck = "stopped"; // changing tapes lifts the head
     media.setSource(QUrl::fromLocalFile(path));
@@ -94,10 +104,73 @@ void Player::openFile(const QString &file, bool paused, qint64 start, bool ignor
     emit insertChanged();
     if (!result["notice"].toString().isEmpty()) emit notice(result["notice"].toString());
 }
-void Player::openUrl(const QUrl &url) {
-    if (url.isLocalFile()) openFile(url.toLocalFile());
-    else emit notice("Choose a local audio file");
+void Player::openUrl(const QUrl &url) { openUrls({url}); }
+// Dropped or chosen files become the tape in the deck, or with `append` join the one already there.
+void Player::openUrls(const QList<QUrl> &urls, bool append) {
+    QStringList paths;
+    for (const auto &url : urls) if (url.isLocalFile()) paths << url.toLocalFile();
+    if (paths.isEmpty()) { emit notice("Choose a local audio file"); return; }
+    if (!append) { load(paths); return; }
+    edit({{"op", "load"}, {"append", true}, {"paths", QJsonArray::fromStringList(paths)}});
 }
+void Player::load(const QStringList &paths, bool paused, qint64 start, bool ignore) {
+    const auto result = core.request({{"op", "load"}, {"paths", QJsonArray::fromStringList(paths)}});
+    if (result.contains("error")) { emit notice(result["error"].toString()); return; }
+    startPaused = paused; pending = start; skipBookmark = ignore;
+    if (result["job"].toBool()) { poller.start(); poll(); return; }
+    refreshTape();
+    openFile(reel["tracks"].toList().value(0).toMap()["path"].toString(), paused, start, ignore || trackCount() > 1);
+}
+void Player::refreshTape() {
+    reel = core.request({{"op", "tape"}}).toVariantMap();
+    const auto cover = reel["cover"].toString();
+    reel["coverUrl"] = cover.isEmpty() ? QUrl() : QUrl::fromLocalFile(cover);
+    media.setLoops(repeat && trackCount() < 2 ? QMediaPlayer::Infinite : 1);
+    emit tapeChanged();
+}
+// An archive packs and unpacks on a core thread; this reports how far along it is.
+void Player::poll() {
+    const auto report = core.request({{"op", "job"}});
+    if (report["active"].toBool()) {
+        jobLabel = report["label"].toString();
+        fraction = qBound(0.0, report["done"].toDouble() / qMax(1.0, report["total"].toDouble()), 1.0);
+        emit progressChanged();
+        return;
+    }
+    poller.stop(); fraction = -1; emit progressChanged();
+    if (!report["notice"].toString().isEmpty()) emit notice(report["notice"].toString());
+    refreshTape();
+    if (report["loaded"].toBool()) openFile(reel["tracks"].toList().value(0).toMap()["path"].toString(), startPaused, pending, true);
+}
+// Bring the track the core landed on under the head, playing or not.
+void Player::cue(const QJsonObject &landed, bool play) {
+    const auto track = landed["path"].toString();
+    if (track.isEmpty() || track == path) { seek(0); if (play && !playing()) drive("play"); }
+    else openFile(track, !play, -1, true, !play && deck == "stopped");
+    refreshTape();
+}
+void Player::playTrack(int index) {
+    const auto landed = core.request({{"op", "select"}, {"index", index}});
+    if (landed.contains("error")) { emit notice(landed["error"].toString()); return; }
+    cue(landed, true);
+}
+void Player::edit(QJsonObject request) {
+    const auto result = core.request(request);
+    if (result.contains("error")) { emit notice(result["error"].toString()); return; }
+    // Removing the track that is up puts the next one under the head.
+    if (result["replaced"].toBool()) cue(result, deck == "playing");
+    refreshTape();
+}
+void Player::moveTrack(int from, int to) { edit({{"op", "edit"}, {"action", "move"}, {"from", from}, {"to", to}}); }
+void Player::removeTrack(int index) { edit({{"op", "edit"}, {"action", "remove"}, {"index", index}}); }
+void Player::renameTape(const QString &name) { edit({{"op", "edit"}, {"action", "name"}, {"name", name}}); }
+void Player::setCover(const QUrl &image) { edit({{"op", "edit"}, {"action", "cover"}, {"path", image.toLocalFile()}}); }
+void Player::exportTape(const QUrl &destination) {
+    const auto result = core.request({{"op", "export"}, {"dest", destination.toLocalFile()}});
+    if (result.contains("error")) { emit notice(result["error"].toString()); return; }
+    poller.start(); poll();
+}
+QVariantMap Player::insertOf(int index) { return core.request({{"op", "insert"}, {"index", index}}).toVariantMap(); }
 // The Rust core decides what each key does to the head; this only carries it out.
 void Player::drive(const char *event, bool waiting) {
     deck = core.request({{"op", "transport"}, {"state", deck}, {"event", event}, {"waiting", waiting}})["state"].toString();
@@ -110,14 +183,14 @@ void Player::stop() { if (loaded()) drive("stop"); }
 // PREV and NEXT find the start of a track. A single file is a tape of one track.
 void Player::search(bool forward) {
     if (!loaded()) return;
-    const auto landed = core.request({{"op", "track"}, {"forward", forward}, {"index", 0}, {"count", 1}, {"position", position()}});
-    seek(landed["position"].toInteger());
+    cue(core.request({{"op", "track"}, {"forward", forward}, {"position", position()}}), deck == "playing");
 }
 void Player::seek(qint64 ms) { if (media.isSeekable()) media.setPosition(core.request({{"op", "seek"}, {"position", ms}, {"duration", duration()}})["position"].toInteger()); }
 void Player::skip(int seconds) { seek(core.request({{"op", "skip"}, {"position", position()}, {"seconds", seconds}, {"duration", duration()}})["position"].toInteger()); }
 void Player::setVolume(double v) { output.setVolume(core.request({{"op", "volume"}, {"volume", v}})["volume"].toDouble()); emit changed(); }
 void Player::toggleMute() { output.setMuted(!muted()); emit changed(); }
-void Player::toggleLoop() { media.setLoops(looping() ? 1 : QMediaPlayer::Infinite); emit changed(); }
+// A single file loops seamlessly inside Qt; a tape loops by starting over after its last track.
+void Player::toggleLoop() { repeat = !repeat; media.setLoops(repeat && trackCount() < 2 ? QMediaPlayer::Infinite : 1); emit changed(); }
 void Player::saveBookmark(bool remove) {
     if (!loaded()) return;
     const auto result = core.request({{"op", "bookmark"}, {"position", position()}, {"remove", remove}});
@@ -131,9 +204,12 @@ void Player::cycleVisualizer() {
     emit visualizerChanged();
     if (!result["notice"].toString().isEmpty()) emit notice(result["notice"].toString());
 }
-void Player::openFolder() {
-    if (path.isEmpty()) return;
-    const auto folder = QFileInfo(path).absolutePath();
+// The folder of a track in the listing, or of the one that is up.
+void Player::openFolder(int track) {
+    const auto listed = reel["tracks"].toList().value(track).toMap()["path"].toString();
+    const auto file = listed.isEmpty() ? path : listed;
+    if (file.isEmpty()) return;
+    const auto folder = QFileInfo(file).absolutePath();
     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(folder))) emit notice("Cannot open " + folder);
 }
 // The insert is read on first look, not on open: the cover can be large and most plays never unfold it.

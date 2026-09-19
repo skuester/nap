@@ -1,5 +1,6 @@
 #include "player.h"
 #include <QGuiApplication>
+#include <QJsonArray>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -22,8 +23,9 @@ extern "C" int nap_run(const char *json) {
     engine.rootContext()->setContextProperty("deck", &player);
     engine.load(QUrl("qrc:/src/Main.qml"));
     if (engine.rootObjects().isEmpty()) return 1;
-    const auto path = options["path"].toString();
-    if (!path.isEmpty()) player.openFile(path, options["paused"].toBool(), options["start"].toInteger(-1), options["ignore"].toBool());
+    QStringList paths;
+    for (const auto &path : options["paths"].toArray()) paths << path.toString();
+    if (!paths.isEmpty()) player.load(paths, options["paused"].toBool(), options["start"].toInteger(-1), options["ignore"].toBool());
     const auto screenshot = options["screenshot"].toString();
     if (!screenshot.isEmpty()) {
         QTimer::singleShot(1200, &app, [&] {

@@ -25,6 +25,8 @@ Qt packages are `qt6-base`, `qt6-declarative`, `qt6-multimedia`, and
 make
 ./target/release/nap                         # empty deck; open or drop a file
 ./target/release/nap ~/Music/song.flac
+./target/release/nap side-a/*.flac            # several files line up as one tape
+./target/release/nap "Summer '98.tape"         # or a saved mixtape, or its .jcard
 ./target/release/nap --paused --time 1:02.5 song.mp3
 ./target/release/nap --volume 40 --loop song.ogg
 ./target/release/nap --ignore-bookmark song.wav
@@ -82,9 +84,9 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
   - *scope*: the waveform in character cells.
   Reels rotate only while playing, the thinner pack turning faster; tape transfers from the left spool to the right.
 
-The open button replaces the loaded file; cancellation leaves it alone. Dragging
-a local file onto the window loads it. nap plays one file at a time, without a
-library or playlist. Common formats include MP3, FLAC, WAV, Ogg, Opus, M4A, AAC,
+The open button replaces what is in the deck; cancellation leaves it alone. Dragging
+files, a `.tape`, or a `.jcard` onto the window loads them. nap has no library: it plays
+the file or the tape you hand it. Common formats include MP3, FLAC, WAV, Ogg, Opus, M4A, AAC,
 and AIFF; actual decoding support follows the installed Qt FFmpeg backend.
 
 | Key | Action |
@@ -101,7 +103,8 @@ and AIFF; actual decoding support follows the installed Qt FFmpeg backend.
 | Enter | Return to bookmark |
 | I | Unfold / put away the insert (↑ ↓ PgUp PgDn scroll it) |
 | V | Change the visualizer |
-| O / Ctrl+O | Open file |
+| Ctrl+S | Save the tape (.tape or .jcard) |
+| O / Ctrl+O | Open files, a tape, or a J-card |
 | ? / K | Toggle help |
 | Esc | Close help |
 | Q | Quit |
@@ -111,6 +114,42 @@ attribute. They survive renaming and moving on the same filesystem; copying
 between filesystems requires preserving extended attributes. Read-only files or
 filesystems without xattrs show an error instead of pretending to save. There is
 one explicit bookmark per file, and quitting does not overwrite it.
+
+## Mixtapes
+
+Open the insert and drop audio onto it: the front panel becomes a track listing, and the deck is
+now playing a tape. Drag rows to reorder, double-click one to play it, and use the × on a row (or
+Delete) to take it off. Double-click the tape's name to retitle it in place. Drop an image on the
+cover to make it the tape's own. The liner notes follow whichever track you pick out.
+
+![a mixtape's insert](docs/mixtape.png)
+
+Ctrl+S saves the tape, and the display between the reels becomes the progress bar while it packs.
+
+- **`Name.tape`** is self-contained: a plain, uncompressed tar of one folder holding the index,
+  the optional cover, and the audio. `tar -xf Name.tape` gets everything back out, and nap opens
+  it directly (unpacked to a private folder under `/tmp`, removed when the tape is replaced or
+  nap quits).
+- **`Name.jcard`** is the index alone, for tapes whose audio stays where it is. Choose it in the
+  save dialog, or write one by hand.
+
+The index (`_index.jcard` inside an archive) is M3U-compatible text, so it is easy to edit and
+other players can read it. One track per line, in order; paths are relative to the index or
+absolute; `#` lines that nap does not know are ignored:
+
+```text
+#EXTM3U
+#PLAYLIST:Summer '98
+#EXTIMG:_cover.jpg
+
+01 Roygbiv.flac
+02 Don't Stop.mp3
+/home/me/Music/03 far away.ogg
+```
+
+On a tape, PREV and NEXT move between tracks and always wrap around. When the last track ends the
+deck auto-stops, cued back at track one; with LOOP on the tape starts over instead. Bookmarks
+belong to single files, so tracks on a tape always start at their beginning.
 
 ## Omarchy
 
