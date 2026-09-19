@@ -90,22 +90,6 @@ ApplicationWindow {
         anchors.centerIn: parent
         scale: Math.min(win.width / width, win.height / height)
 
-        // The insert's edge shows behind the tape; pulling it unfolds the whole card.
-        Rectangle {
-            id: insertTab
-            x: 548; y: deck.loaded ? (tabArea.containsMouse ? 3 : 8) : 20; width: 92; height: 30; radius: 3
-            color: paper
-            Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-            Rectangle { y: 4; width: parent.width; height: 2; color: stripe }
-            Rectangle { y: 8; width: parent.width; height: 1; color: stripe }
-            MouseArea {
-                id: tabArea
-                width: parent.width; height: 18 - parent.y; hoverEnabled: true; enabled: deck.loaded
-                cursorShape: Qt.PointingHandCursor
-                onClicked: win.showInsert(true)
-                Accessible.role: Accessible.Button; Accessible.name: "Unfold the insert"
-            }
-        }
         Rectangle {
             id: cassette
             x: 40; y: 18; width: 640; height: 376; radius: 16
@@ -129,7 +113,26 @@ ApplicationWindow {
                     x: 20; y: 16; width: 30; height: 30; radius: 3; color: "transparent"; border.color: ink; border.width: 2
                     Text { anchors.centerIn: parent; text: "A"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: ink }
                 }
-                Text { x: 62; y: 17; width: 498; text: deck.filename; elide: Text.ElideMiddle; font.family: mono; font.pixelSize: 19; font.weight: Font.Bold; color: ink }
+                // A pictogram of the insert itself, cover art above lines of type, boxed like the side mark.
+                Rectangle {
+                    id: insertBadge
+                    objectName: "insertBadge"
+                    readonly property color mark: badgeArea.containsMouse ? paper : ink
+                    x: 530; y: 16; width: 30; height: 30; radius: 3; visible: deck.loaded
+                    color: badgeArea.containsMouse ? ink : "transparent"; border.color: ink; border.width: 2
+                    Rectangle { x: 7; y: 7; width: 7; height: 7; color: parent.mark }
+                    Rectangle { x: 16; y: 7; width: 7; height: 2; color: parent.mark }
+                    Rectangle { x: 16; y: 12; width: 7; height: 2; color: parent.mark }
+                    Rectangle { x: 7; y: 17; width: 16; height: 2; color: parent.mark }
+                    Rectangle { x: 7; y: 21; width: 11; height: 2; color: parent.mark }
+                    MouseArea {
+                        id: badgeArea
+                        anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: win.showInsert(true)
+                        Accessible.role: Accessible.Button; Accessible.name: "Unfold the insert"
+                    }
+                }
+                Text { x: 62; y: 17; width: deck.loaded ? 456 : 498; text: deck.filename; elide: Text.ElideMiddle; font.family: mono; font.pixelSize: 19; font.weight: Font.Bold; color: ink }
                 Rectangle { x: 20; y: 52; width: 540; height: 1; color: inkDim; opacity: 0.55 }
                 Text { x: 20; y: 59; width: 390; text: deck.loaded ? deck.detail : "Drop an audio file here, or press O to open one"; elide: Text.ElideRight; font.family: mono; font.pixelSize: 10; color: inkDim }
                 Text { x: 410; y: 58; width: 150; horizontalAlignment: Text.AlignRight; text: clock(deck.position) + " / " + clock(deck.duration); font.family: mono; font.pixelSize: 11; font.weight: Font.DemiBold; color: ink }
@@ -299,7 +302,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind. Drag or scroll the grooves under the tape to set the volume. Pull the paper tab behind the tape to read its insert."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind. Drag or scroll the grooves under the tape to set the volume. Click the boxed icon on the label to read the tape's insert."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }
