@@ -62,7 +62,9 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
 
 - **Label's ruled line:** click or drag to seek; it inks over as the tape plays. A small diamond marks your bookmark.
 - **REW / FWD:** tap to skip five seconds; hold to wind at 20 audio seconds per second.
-- **PLAY / PAUSE, STOP, OPEN:** physical-style keys. Stop returns to the beginning.
+- **PLAY / PAUSE, STOP, OPEN:** physical-style keys that follow a real deck's mechanism. PLAY is lit only
+  while the head is engaged (playing or paused). STOP lifts the head and leaves the tape where it is;
+  REW and FWD then become PREV and NEXT, which find the start of a track (on a single file, its beginning).
 - **Lower cassette ridges:** click, drag, or scroll to set the player's volume.
 - **LOOP / MARK:** toggle repeat or save your place. LOOP latches down; each key's lamp lights while it applies.
 - **The label's A mark:** click it (or press I) to unfold the insert, a J-card with the
@@ -91,7 +93,8 @@ and AIFF; actual decoding support follows the installed Qt FFmpeg backend.
 | ← / → | Back / forward five seconds; keyboard repeat continues seeking |
 | ↑ / ↓ | Volume in five-percent steps |
 | M | Mute / unmute |
-| S | Stop and rewind to the start |
+| S | Stop, leaving the tape where it is |
+| , / . | Previous / next track start |
 | L | Toggle loop |
 | B | Bookmark current position |
 | Shift+B | Remove bookmark |

@@ -70,7 +70,10 @@ private slots:
         { Player relaunched; QCOMPARE(relaunched.visualizer(), QString("vu")); for (int i = 0; i < 3; ++i) relaunched.cycleVisualizer(); QCOMPARE(relaunched.visualizer(), QString("scope")); }
         if (userState.isEmpty()) qunsetenv("XDG_STATE_HOME"); else qputenv("XDG_STATE_HOME", userState);
         p.toggleLoop(); QVERIFY(p.looping()); p.toggleLoop(); QVERIFY(!p.looping());
-        p.stop(); QCOMPARE(p.position(), 0); QVERIFY(!p.playing());
+        // STOP lifts the head and leaves the tape where it is; PREV and NEXT then find the start.
+        QVERIFY(!p.stopped()); p.stop(); QVERIFY(p.stopped()); QVERIFY(!p.playing()); QVERIFY(p.position() > 1100);
+        p.next(); QCOMPARE(p.position(), 0); p.seek(8000); p.previous(); QCOMPARE(p.position(), 0); QVERIFY(p.stopped());
+        p.toggle(); QTRY_VERIFY(p.playing()); QVERIFY(!p.stopped()); p.stop();
         p.saveBookmark(true); QCOMPARE(p.bookmark(), -1);
         p.saveBookmark(true); QCOMPARE(p.bookmark(), -1);
         p.setVolume(-5); QCOMPARE(p.volume(), 0.0);
@@ -100,7 +103,8 @@ private slots:
         QTest::keyClick(w, Qt::Key_Space); QTRY_VERIFY(!p.playing());
         QTest::keyClick(w, Qt::Key_Right); QVERIFY(p.position() >= 5000);
         QTest::keyClick(w, Qt::Key_B); QVERIFY(p.bookmark() >= 5000);
-        QTest::keyClick(w, Qt::Key_S); QCOMPARE(p.position(), 0);
+        QTest::keyClick(w, Qt::Key_S); QVERIFY(p.stopped()); QVERIFY(p.position() >= 5000);
+        QTest::keyClick(w, Qt::Key_Comma); QCOMPARE(p.position(), 0);
         QTest::keyClick(w, Qt::Key_Return); QVERIFY(p.position() >= 5000);
         QTest::keyClick(w, Qt::Key_B, Qt::ShiftModifier); QCOMPARE(p.bookmark(), -1);
         QTest::keyClick(w, Qt::Key_L); QVERIFY(p.looping());
@@ -116,7 +120,7 @@ private slots:
         QTest::keyClick(w, Qt::Key_Escape); QVERIFY(!w->property("helpVisible").toBool());
         auto *key = w->findChild<QQuickItem *>("playKey"); QVERIFY(key);
         QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, key->mapToScene(QPointF(50, 40)).toPoint());
-        QTRY_VERIFY(p.playing()); p.stop();
+        QTRY_VERIFY(p.playing()); p.toggle(); QTRY_VERIFY(!p.playing()); QVERIFY(!p.stopped()); p.seek(0);
         auto *forward = w->findChild<QQuickItem *>("forwardKey"); QVERIFY(forward);
         const auto point = forward->mapToScene(QPointF(50, 40)).toPoint();
         QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, point);
@@ -127,6 +131,9 @@ private slots:
         QTest::mouseRelease(w, Qt::LeftButton, Qt::NoModifier, point);
         QVERIFY(p.position() >= 9000);
         const auto released = p.position(); QTest::qWait(200); QCOMPARE(p.position(), released);
+        // With the head lifted the same key is NEXT: on a single file, back to the start, still stopped.
+        p.stop(); QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, point);
+        QCOMPARE(p.position(), 0); QVERIFY(p.stopped());
         auto *timeline = w->findChild<QQuickItem *>("timeline"); QVERIFY(timeline);
         QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, timeline->mapToScene(QPointF(timeline->width() / 2, 9)).toPoint());
         QVERIFY(std::abs(p.position() - 6000) < 200);

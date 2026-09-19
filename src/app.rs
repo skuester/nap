@@ -1,5 +1,9 @@
 //! Playback policy and file state. Qt reports transport state and executes commands.
-use crate::{bookmark, insert, preference, theme::Theme};
+use crate::{
+    bookmark, insert, preference,
+    theme::Theme,
+    transport::{self, Deck, Event},
+};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -79,6 +83,22 @@ impl App {
         json!({"name": name, "notice": saved.err().unwrap_or_default()})
     }
 
+    fn transport(request: &Value) -> Result<Value, String> {
+        let deck = Deck::parse(request["state"].as_str().unwrap_or(""));
+        let event = Event::parse(request["event"].as_str().unwrap_or(""), flag(request, "waiting"));
+        Ok(json!({"state": deck.after(event.ok_or("unknown transport event")?).name()}))
+    }
+
+    /// Where PREV (`forward` false) or NEXT lands: a track, always at its start.
+    fn track(request: &Value) -> Value {
+        let (index, count) = (number(request, "index").max(0) as usize, number(request, "count").max(1) as usize);
+        let track = match flag(request, "forward") {
+            true => transport::next(index, count),
+            false => transport::previous(index, count, number(request, "position")),
+        };
+        json!({"index": track, "position": 0})
+    }
+
     fn theme() -> Value {
         let t = Theme::load_omarchy();
         json!({"background": t.background.to_css(), "foreground": t.foreground.to_css(), "accent": t.accent.to_css()})
@@ -95,6 +115,8 @@ impl App {
             "skip" => Ok(json!({"position": skip(n("position"), n("seconds"), n("duration"))})),
             "volume" => Ok(json!({"volume": volume(request["volume"].as_f64().unwrap_or(0.0))})),
             "theme" => Ok(Self::theme()),
+            "transport" => Self::transport(request),
+            "track" => Ok(Self::track(request)),
             _ => Err("unknown core operation".into()),
         }
     }

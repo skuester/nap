@@ -15,6 +15,7 @@ class Player : public QObject {
     Q_PROPERTY(qint64 duration READ duration NOTIFY changed)
     Q_PROPERTY(qint64 bookmark READ bookmark NOTIFY changed)
     Q_PROPERTY(bool playing READ playing NOTIFY changed)
+    Q_PROPERTY(bool stopped READ stopped NOTIFY changed)
     Q_PROPERTY(bool loaded READ loaded NOTIFY changed)
     Q_PROPERTY(bool looping READ looping NOTIFY changed)
     Q_PROPERTY(bool muted READ muted NOTIFY changed)
@@ -34,6 +35,7 @@ public:
     qint64 bookmark() const { return mark; }
     bool playing() const { return media.playbackState() == QMediaPlayer::PlayingState; }
     bool loaded() const { return !media.source().isEmpty(); }
+    bool stopped() const { return deck == "stopped"; }
     bool looping() const { return media.loops() == QMediaPlayer::Infinite; }
     bool muted() const { return output.isMuted(); }
     double volume() const { return output.volume(); }
@@ -47,6 +49,8 @@ public:
     Q_INVOKABLE void openUrl(const QUrl &url);
     Q_INVOKABLE void toggle();
     Q_INVOKABLE void stop();
+    Q_INVOKABLE void previous() { search(false); }
+    Q_INVOKABLE void next() { search(true); }
     Q_INVOKABLE void seek(qint64 ms);
     Q_INVOKABLE void skip(int seconds);
     Q_INVOKABLE void setVolume(double value);
@@ -62,14 +66,16 @@ signals:
     void visualizerChanged();
     void notice(const QString &message);
 private:
+    void drive(const char *event, bool waiting = false);
+    void search(bool forward);
     Core core;
     QMediaPlayer media;
     QAudioOutput output;
     QAudioBufferOutput buffers;
     QVariantList samples, bands, needles;
-    QString scene;
+    QString scene, deck = "stopped";
     QVariantMap card;
     QString path, size;
     qint64 mark = -1, pending = -1;
-    bool startPaused = false;
+    bool startPaused = false, loading = false;
 };

@@ -8,3 +8,4 @@ pub mod install;
 pub mod meter;
 pub mod preference;
 pub mod theme;
+pub mod transport;

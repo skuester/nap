@@ -53,6 +53,8 @@ ApplicationWindow {
     function open() { picker.open() }
     Shortcut { sequence: "Space"; onActivated: deck.toggle() }
     Shortcut { sequence: "S"; onActivated: deck.stop() }
+    Shortcut { sequences: [",", "<"]; onActivated: deck.previous() }
+    Shortcut { sequences: [".", ">"]; onActivated: deck.next() }
     Shortcut { sequence: "Left"; onActivated: deck.skip(-5) }
     Shortcut { sequence: "Right"; onActivated: deck.skip(5) }
     Shortcut { sequence: "Up"; onActivated: win.insertVisible ? jcard.scroll(-40) : deck.setVolume(deck.volume + 0.05) }
@@ -234,9 +236,11 @@ ApplicationWindow {
 
         Row {
             x: 40; y: 410; spacing: 6
-            Transport { id: rewindKey; glyph: "rew"; caption: "REW"; seekDirection: -1; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onWind: seconds => deck.skip(seconds) }
-            Transport { objectName: "playKey"; glyph: deck.playing ? "pause" : "play"; caption: deck.playing ? "PAUSE" : "PLAY"; ink: accentInk; face: accent; well: win.well; engaged: deck.playing; onClicked: deck.loaded ? deck.toggle() : win.open() }
-            Transport { id: forwardKey; objectName: "forwardKey"; glyph: "fwd"; caption: "FWD"; seekDirection: 1; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onWind: seconds => deck.skip(seconds) }
+            // While the head is on the tape these wind it; with the head lifted they search for track starts.
+            Transport { id: rewindKey; glyph: deck.stopped ? "prev" : "rew"; caption: deck.stopped ? "PREV" : "REW"; seekDirection: deck.stopped ? 0 : -1; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onWind: seconds => deck.skip(seconds); onClicked: if (deck.stopped) deck.previous() }
+            // Lit only while the head is engaged: playing, or held in pause.
+            Transport { objectName: "playKey"; glyph: deck.playing ? "pause" : "play"; caption: deck.playing ? "PAUSE" : "PLAY"; ink: deck.stopped ? fg : accentInk; face: deck.stopped ? shell : accent; well: win.well; engaged: deck.playing; onClicked: deck.loaded ? deck.toggle() : win.open() }
+            Transport { id: forwardKey; objectName: "forwardKey"; glyph: deck.stopped ? "next" : "fwd"; caption: deck.stopped ? "NEXT" : "FWD"; seekDirection: deck.stopped ? 0 : 1; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onWind: seconds => deck.skip(seconds); onClicked: if (deck.stopped) deck.next() }
             Transport { glyph: "stop"; caption: "STOP"; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onClicked: deck.stop() }
             Transport { glyph: "open"; caption: "OPEN"; ink: fg; face: shell; well: win.well; onClicked: win.open() }
         }
@@ -271,7 +275,7 @@ ApplicationWindow {
             scale: Math.min(1, (parent.height - 32) / implicitHeight)
             Text { text: "Keys"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: fg; bottomPadding: 6 }
             Repeater {
-                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["V", "Change the visualizer"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
+                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop where the tape is"], [", / .", "Previous / next track start"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["V", "Change the visualizer"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
                 Row {
                     required property var modelData
                     width: parent.width
@@ -279,7 +283,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind. Drag or scroll the grooves under the tape to set the volume. Click the A on the label to read the tape's insert, or the display between the reels to change it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. Drag or scroll the grooves under the tape to set the volume. Click the A on the label to read the tape's insert, or the display between the reels to change it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }

@@ -16,16 +16,20 @@ Player::Player(QObject *parent) : QObject(parent) {
     connect(&media, &QMediaPlayer::metaDataChanged, this, &Player::changed);
     connect(&media, &QMediaPlayer::playbackStateChanged, this, [this] {
         if (!playing()) { samples.clear(); bands.clear(); needles.clear(); emit waveChanged(); }
+        // The tape ran out under a playing head: it lifts, as a deck's auto-stop would.
+        if (media.playbackState() == QMediaPlayer::StoppedState && deck == "playing") drive("ended");
         emit changed();
     });
     connect(&media, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString &s) {
         emit notice("Cannot play: " + s); emit changed();
     });
     connect(&media, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus s) {
-        if (s == QMediaPlayer::LoadedMedia) {
+        // Seeking back from the end reports LoadedMedia again; only the first one is a fresh tape.
+        if (s == QMediaPlayer::LoadedMedia && loading) {
+            loading = false;
             if (pending >= 0) seek(pending);
             pending = -1;
-            if (!startPaused) media.play();
+            drive("loaded", startPaused);
         }
         emit changed();
     });
@@ -82,6 +86,8 @@ void Player::openFile(const QString &file, bool paused, qint64 start, bool ignor
     mark = result["mark"].toInteger(-1);
     pending = result["pending"].toInteger(-1);
     startPaused = paused;
+    loading = true;
+    deck = "stopped"; // changing tapes lifts the head
     media.setSource(QUrl::fromLocalFile(path));
     card.clear();
     emit changed();
@@ -92,8 +98,21 @@ void Player::openUrl(const QUrl &url) {
     if (url.isLocalFile()) openFile(url.toLocalFile());
     else emit notice("Choose a local audio file");
 }
-void Player::toggle() { if (loaded()) { if (playing()) media.pause(); else media.play(); } }
-void Player::stop() { media.stop(); media.setPosition(0); }
+// The Rust core decides what each key does to the head; this only carries it out.
+void Player::drive(const char *event, bool waiting) {
+    deck = core.request({{"op", "transport"}, {"state", deck}, {"event", event}, {"waiting", waiting}})["state"].toString();
+    if (deck == "playing") media.play();
+    else if (playing()) media.pause();
+    emit changed();
+}
+void Player::toggle() { if (loaded()) drive("play"); }
+void Player::stop() { if (loaded()) drive("stop"); }
+// PREV and NEXT find the start of a track. A single file is a tape of one track.
+void Player::search(bool forward) {
+    if (!loaded()) return;
+    const auto landed = core.request({{"op", "track"}, {"forward", forward}, {"index", 0}, {"count", 1}, {"position", position()}});
+    seek(landed["position"].toInteger());
+}
 void Player::seek(qint64 ms) { if (media.isSeekable()) media.setPosition(core.request({{"op", "seek"}, {"position", ms}, {"duration", duration()}})["position"].toInteger()); }
 void Player::skip(int seconds) { seek(core.request({{"op", "skip"}, {"position", position()}, {"seconds", seconds}, {"duration", duration()}})["position"].toInteger()); }
 void Player::setVolume(double v) { output.setVolume(core.request({{"op", "volume"}, {"volume", v}})["volume"].toDouble()); emit changed(); }

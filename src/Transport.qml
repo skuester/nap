@@ -24,6 +24,8 @@ Button {
         "pause": { fill: "M7 3 h5 v18 h-5 Z M16 3 h5 v18 h-5 Z" },
         "fwd": { fill: "M1 4 L13 12 L1 20 Z M14 4 L26 12 L14 20 Z" },
         "stop": { fill: "M6 4 h16 v16 h-16 Z" },
+        "prev": { fill: "M2 4 h3 v16 h-3 Z M16 4 L16 20 L6 12 Z M27 4 L27 20 L17 12 Z" },
+        "next": { fill: "M1 4 L11 12 L1 20 Z M12 4 L22 12 L12 20 Z M23 4 h3 v16 h-3 Z" },
         "open": { fill: "M14 3 L25 15 L3 15 Z M3 18 h22 v3 h-22 Z" },
         "mark": { fill: "M8 3 h12 v18 l-6 -5 l-6 5 Z" },
         "loop": { fill: "M23.2 9.8 L22.8 3.2 L16.5 9.5 Z", line: "M21.7 14.1 A8 8 0 1 1 19.7 6.3" }
