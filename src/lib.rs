@@ -7,5 +7,7 @@ pub mod insert;
 pub mod install;
 pub mod meter;
 pub mod preference;
+pub mod session;
+pub mod tape;
 pub mod theme;
 pub mod transport;

@@ -1,8 +1,9 @@
 //! Playback policy and file state. Qt reports transport state and executes commands.
 use crate::{
     bookmark, insert, preference,
+    session::Session,
     theme::Theme,
-    transport::{self, Deck, Event},
+    transport::{Deck, Event},
 };
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -38,6 +39,7 @@ pub fn start_position(explicit: i64, mark: i64, ignore: bool) -> i64 {
 #[derive(Default)]
 pub struct App {
     path: Option<PathBuf>,
+    session: Session,
 }
 fn number(request: &Value, key: &str) -> i64 {
     request[key].as_i64().unwrap_or(0)
@@ -89,14 +91,25 @@ impl App {
         Ok(json!({"state": deck.after(event.ok_or("unknown transport event")?).name()}))
     }
 
-    /// Where PREV (`forward` false) or NEXT lands: a track, always at its start.
-    fn track(request: &Value) -> Value {
-        let (index, count) = (number(request, "index").max(0) as usize, number(request, "count").max(1) as usize);
-        let track = match flag(request, "forward") {
-            true => transport::next(index, count),
-            false => transport::previous(index, count, number(request, "position")),
-        };
-        json!({"index": track, "position": 0})
+    fn insert(&self, request: &Value) -> Result<Value, String> {
+        let path = self.session.track_path(request).or(self.path.as_ref()).ok_or("No file loaded")?;
+        Ok(insert::read(path))
+    }
+
+    /// Requests about the tape in the deck rather than the file under the head.
+    fn tape(&mut self, op: &str, request: &Value) -> Option<Result<Value, String>> {
+        let session = &mut self.session;
+        Some(match op {
+            "load" => session.load(request),
+            "tape" => Ok(session.describe()),
+            "edit" => session.edit(request),
+            "export" => session.export(request),
+            "job" => Ok(session.poll()),
+            "track" => Ok(session.search(flag(request, "forward"), number(request, "position"))),
+            "select" => session.select(number(request, "index").max(0) as usize),
+            "ended" => Ok(session.ended(flag(request, "looping"))),
+            _ => return None,
+        })
     }
 
     fn theme() -> Value {
@@ -106,17 +119,20 @@ impl App {
 
     pub fn dispatch(&mut self, request: &Value) -> Result<Value, String> {
         let n = |key: &str| number(request, key);
-        match request["op"].as_str().unwrap_or("") {
+        let op = request["op"].as_str().unwrap_or("");
+        if let Some(reply) = self.tape(op, request) {
+            return reply;
+        }
+        match op {
             "open" => self.open(request),
             "bookmark" => self.bookmark(request),
-            "insert" => Ok(insert::read(self.path.as_ref().ok_or("No file loaded")?)),
+            "insert" => self.insert(request),
             "visualizer" => Ok(Self::visualizer(request)),
             "seek" => Ok(json!({"position": seek(n("position"), n("duration"))})),
             "skip" => Ok(json!({"position": skip(n("position"), n("seconds"), n("duration"))})),
             "volume" => Ok(json!({"volume": volume(request["volume"].as_f64().unwrap_or(0.0))})),
             "theme" => Ok(Self::theme()),
             "transport" => Self::transport(request),
-            "track" => Ok(Self::track(request)),
             _ => Err("unknown core operation".into()),
         }
     }

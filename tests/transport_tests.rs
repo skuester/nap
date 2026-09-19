@@ -38,6 +38,12 @@ fn track_search_always_lands_somewhere() {
     assert_eq!(transport::previous(0, 1, 0), 0);
     assert_eq!(transport::next(0, 1), 0);
     assert_eq!(transport::next(0, 0), 0);
+    // The end of a track plays on; the end of the tape stops, cued at the top, unless looping.
+    assert_eq!(transport::after_end(0, 3, false), (1, true));
+    assert_eq!(transport::after_end(2, 3, false), (0, false));
+    assert_eq!(transport::after_end(2, 3, true), (0, true));
+    assert_eq!(transport::after_end(0, 1, false), (0, false));
+    assert_eq!(transport::after_end(0, 0, true), (0, true));
 }
 
 #[test]
@@ -52,10 +58,6 @@ fn the_core_answers_transport_requests() {
     assert_eq!(state(&mut app, "stopped", "loaded", true), "paused");
     assert_eq!(state(&mut app, "playing", "ended", false), "stopped");
     assert!(app.dispatch(&json!({"op":"transport", "state":"playing", "event":"eject"})).is_err());
-    let landed =
-        app.dispatch(&json!({"op":"track", "forward": false, "index": 0, "count": 3, "position": 500})).unwrap();
-    assert_eq!(landed, json!({"index": 2, "position": 0}));
-    let landed =
-        app.dispatch(&json!({"op":"track", "forward": true, "index": 2, "count": 3, "position": 500})).unwrap();
-    assert_eq!(landed, json!({"index": 0, "position": 0}));
+    // On an empty deck track search still answers, with nowhere to go.
+    assert_eq!(app.dispatch(&json!({"op":"track", "forward": true, "position": 0})).unwrap()["index"], 0);
 }

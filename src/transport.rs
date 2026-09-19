@@ -75,3 +75,10 @@ pub fn previous(index: usize, count: usize, position: i64) -> usize {
 pub fn next(index: usize, count: usize) -> usize {
     (index + 1) % count.max(1)
 }
+
+/// A track ran out: the track to cue, and whether to keep playing. The last track ends the tape,
+/// which stops cued back at its first track unless it is looping.
+pub fn after_end(index: usize, count: usize, looping: bool) -> (usize, bool) {
+    let last = index + 1 >= count.max(1);
+    (next(index, count), !last || looping)
+}

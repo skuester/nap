@@ -377,3 +377,13 @@ pub fn read(path: &Path) -> Value {
     card["file"] = json!(rows(file_rows(path, tagged.as_ref())));
     card
 }
+
+/// A track listing's worth: title, artist, and length in seconds, empty where the file says nothing.
+pub fn brief(path: &Path) -> (String, String, u64) {
+    let options = ParseOptions::new().read_cover_art(false);
+    let file =
+        Probe::open(path).ok().and_then(|p| p.options(options).guess_file_type().ok()).and_then(|p| p.read().ok());
+    file.map_or_else(Default::default, |file| {
+        (first(&file, ItemKey::TrackTitle), first(&file, ItemKey::TrackArtist), file.properties().duration().as_secs())
+    })
+}
