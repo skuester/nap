@@ -37,7 +37,7 @@ Name Rust integration files `*_tests.rs` and test functions descriptively in `sn
 
 ## Commit & Pull Request Guidelines
 
-Use focused commits with short subjects, like the existing `Improve labels`; no formal prefix convention exists. PRs should describe changes, link relevant issues, report checks, and include screenshots for UI changes.
+Use focused commits with short subjects, like the existing `Improve labels`; no formal prefix convention exists. PRs should describe changes, link relevant issues, report checks, and include screenshots for UI changes. A feature is not complete until both `make check` and `make crap` pass; report both results.
 
 ## Configuration Precautions
 
