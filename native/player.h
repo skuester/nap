@@ -21,6 +21,7 @@ class Player : public QObject {
     Q_PROPERTY(double volume READ volume NOTIFY changed)
     Q_PROPERTY(QVariantList wave READ wave NOTIFY waveChanged)
     Q_PROPERTY(QVariantMap palette READ palette CONSTANT)
+    Q_PROPERTY(QVariantMap insert READ insert NOTIFY insertChanged)
 public:
     explicit Player(QObject *parent = nullptr);
     QString filename() const;
@@ -35,6 +36,7 @@ public:
     double volume() const { return output.volume(); }
     QVariantList wave() const { return samples; }
     QVariantMap palette() const;
+    QVariantMap insert();
     void openFile(const QString &path, bool paused = false, qint64 start = -1, bool ignore = false);
     Q_INVOKABLE void openUrl(const QUrl &url);
     Q_INVOKABLE void toggle();
@@ -48,6 +50,7 @@ public:
 signals:
     void changed();
     void waveChanged();
+    void insertChanged();
     void notice(const QString &message);
 private:
     Core core;
@@ -55,6 +58,7 @@ private:
     QAudioOutput output;
     QAudioBufferOutput buffers;
     QVariantList samples;
+    QVariantMap card;
     QString path, size;
     qint64 mark = -1, pending = -1;
     bool startPaused = false;

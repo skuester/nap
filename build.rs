@@ -7,7 +7,7 @@ fn output(cmd: &mut Command) -> String {
 }
 
 fn main() {
-    for path in ["native", "src/Main.qml", "src/Reel.qml", "src/Transport.qml", "resources.qrc"] {
+    for path in ["native", "src/Main.qml", "src/Insert.qml", "src/Reel.qml", "src/Transport.qml", "resources.qrc"] {
         println!("cargo:rerun-if-changed={path}");
     }
     println!("cargo:rerun-if-env-changed=CXX");

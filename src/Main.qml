@@ -27,8 +27,16 @@ ApplicationWindow {
     readonly property color stripe: contrast(accent, paper) >= 1.12 ? accent : inkDim
     readonly property color accentInk: contrast(accent, fg) >= contrast(accent, bg) ? fg : bg
     readonly property string mono: "monospace"
+    readonly property string lengthClass: deck.duration > 0 ? "C-" + Math.max(1, Math.round(deck.duration / 60000)) : ""
     readonly property int winding: forwardKey.down ? 1 : rewindKey.down ? -1 : 0
     property bool helpVisible: false
+    property bool insertVisible: false
+    property var insertCard: ({})
+    // The insert is read from the file only once someone pulls it out.
+    function showInsert(show) {
+        if (show && deck.loaded) insertCard = deck.insert
+        insertVisible = show && deck.loaded
+    }
     property string message: ""
     function lum(c) {
         function linear(v) { return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
@@ -47,8 +55,11 @@ ApplicationWindow {
     Shortcut { sequence: "S"; onActivated: deck.stop() }
     Shortcut { sequence: "Left"; onActivated: deck.skip(-5) }
     Shortcut { sequence: "Right"; onActivated: deck.skip(5) }
-    Shortcut { sequence: "Up"; onActivated: deck.setVolume(deck.volume + 0.05) }
-    Shortcut { sequence: "Down"; onActivated: deck.setVolume(deck.volume - 0.05) }
+    Shortcut { sequence: "Up"; onActivated: win.insertVisible ? jcard.scroll(-40) : deck.setVolume(deck.volume + 0.05) }
+    Shortcut { sequence: "Down"; onActivated: win.insertVisible ? jcard.scroll(40) : deck.setVolume(deck.volume - 0.05) }
+    Shortcut { sequence: "PgUp"; enabled: win.insertVisible; onActivated: jcard.scroll(-320) }
+    Shortcut { sequence: "PgDown"; enabled: win.insertVisible; onActivated: jcard.scroll(320) }
+    Shortcut { sequence: "I"; onActivated: win.showInsert(!win.insertVisible) }
     Shortcut { sequence: "B"; onActivated: deck.saveBookmark() }
     Shortcut { sequence: "Shift+B"; onActivated: deck.saveBookmark(true) }
     Shortcut { sequence: "Return"; onActivated: if (deck.bookmark >= 0) deck.seek(deck.bookmark) }
@@ -59,7 +70,7 @@ ApplicationWindow {
     Shortcut { sequence: "Q"; onActivated: Qt.quit() }
     Shortcut { sequence: "?"; onActivated: win.helpVisible = !win.helpVisible }
     Shortcut { sequence: "K"; onActivated: win.helpVisible = !win.helpVisible }
-    Shortcut { sequence: "Escape"; onActivated: win.helpVisible = false }
+    Shortcut { sequence: "Escape"; onActivated: if (win.helpVisible) win.helpVisible = false; else win.showInsert(false) }
     FileDialog {
         id: picker; title: "Load a tape"
         nameFilters: ["Audio (*.mp3 *.flac *.wav *.ogg *.opus *.m4a *.aac *.aiff *.aif *.wma *.ape *.alac *.wv)", "All files (*)"]
@@ -68,6 +79,7 @@ ApplicationWindow {
     Connections {
         target: deck
         function onNotice(text) { win.message = text; toastTimer.restart() }
+        function onInsertChanged() { if (win.insertVisible) win.showInsert(true); else win.insertCard = ({}) }
     }
     Timer { id: toastTimer; interval: 6500; onTriggered: win.message = "" }
     DropArea { id: dropZone; anchors.fill: parent; onDropped: drop => { if (drop.hasUrls) deck.openUrl(drop.urls[0]) } }
@@ -78,6 +90,22 @@ ApplicationWindow {
         anchors.centerIn: parent
         scale: Math.min(win.width / width, win.height / height)
 
+        // The insert's edge shows behind the tape; pulling it unfolds the whole card.
+        Rectangle {
+            id: insertTab
+            x: 548; y: deck.loaded ? (tabArea.containsMouse ? 3 : 8) : 20; width: 92; height: 30; radius: 3
+            color: paper
+            Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Rectangle { y: 4; width: parent.width; height: 2; color: stripe }
+            Rectangle { y: 8; width: parent.width; height: 1; color: stripe }
+            MouseArea {
+                id: tabArea
+                width: parent.width; height: 18 - parent.y; hoverEnabled: true; enabled: deck.loaded
+                cursorShape: Qt.PointingHandCursor
+                onClicked: win.showInsert(true)
+                Accessible.role: Accessible.Button; Accessible.name: "Unfold the insert"
+            }
+        }
         Rectangle {
             id: cassette
             x: 40; y: 18; width: 640; height: 376; radius: 16
@@ -222,7 +250,7 @@ ApplicationWindow {
                 }
             }
             Text { x: 32; y: 347; text: deck.muted ? "muted" : "vol " + Math.round(deck.volume * 100); font.family: mono; font.pixelSize: 10; color: dim }
-            Text { x: 508; y: 347; width: 100; horizontalAlignment: Text.AlignRight; text: deck.duration > 0 ? "C-" + Math.max(1, Math.round(deck.duration / 60000)) : "blank"; font.family: mono; font.pixelSize: 10; color: dim }
+            Text { x: 508; y: 347; width: 100; horizontalAlignment: Text.AlignRight; text: win.lengthClass || "blank"; font.family: mono; font.pixelSize: 10; color: dim }
         }
 
         Row {
@@ -238,6 +266,14 @@ ApplicationWindow {
             Transport { implicitWidth: 48; glyph: "loop"; caption: "LOOP"; ink: fg; face: shell; well: win.well; lamp: glow; hasLamp: true; lit: deck.looping; engaged: deck.looping; onClicked: deck.toggleLoop() }
             Transport { implicitWidth: 48; glyph: "mark"; caption: "MARK"; ink: fg; face: shell; well: win.well; lamp: glow; hasLamp: true; lit: deck.bookmark >= 0; enabled: deck.loaded; onClicked: deck.saveBookmark() }
             Transport { implicitWidth: 48; glyph: "help"; caption: "KEYS"; ink: fg; face: shell; well: win.well; engaged: win.helpVisible; onClicked: win.helpVisible = true }
+        }
+        Insert {
+            id: jcard
+            anchors.fill: parent; z: 5
+            open: win.insertVisible; card: win.insertCard; filename: deck.filename
+            lengthClass: win.lengthClass
+            paper: win.paper; ink: win.ink; inkDim: win.inkDim; stripe: win.stripe; scrim: Qt.alpha(bg, 0.88); mono: win.mono
+            onDismissed: win.showInsert(false)
         }
     }
     Rectangle {
@@ -255,7 +291,7 @@ ApplicationWindow {
             scale: Math.min(1, (parent.height - 32) / implicitHeight)
             Text { text: "Keys"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: fg; bottomPadding: 6 }
             Repeater {
-                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
+                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
                 Row {
                     required property var modelData
                     width: parent.width
@@ -263,7 +299,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind. Drag or scroll the grooves under the tape to set the volume."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind. Drag or scroll the grooves under the tape to set the volume. Pull the paper tab behind the tape to read its insert."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }

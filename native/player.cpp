@@ -64,7 +64,9 @@ void Player::openFile(const QString &file, bool paused, qint64 start, bool ignor
     pending = result["pending"].toInteger(-1);
     startPaused = paused;
     media.setSource(QUrl::fromLocalFile(path));
+    card.clear();
     emit changed();
+    emit insertChanged();
     if (!result["notice"].toString().isEmpty()) emit notice(result["notice"].toString());
 }
 void Player::openUrl(const QUrl &url) {
@@ -84,6 +86,11 @@ void Player::saveBookmark(bool remove) {
     if (result.contains("error")) { emit notice("Bookmark failed: " + result["error"].toString()); return; }
     mark = result["mark"].toInteger(-1); emit changed();
     emit notice(result["notice"].toString());
+}
+// The insert is read on first look, not on open: the cover can be large and most plays never unfold it.
+QVariantMap Player::insert() {
+    if (card.isEmpty() && loaded()) card = core.request({{"op", "insert"}}).toVariantMap();
+    return card;
 }
 QVariantMap Player::palette() const {
     return core.request({{"op", "theme"}}).toVariantMap();

@@ -2,15 +2,15 @@
 
 ## Product & Design Direction
 
-Read [brief.md](brief.md) before changing behavior or UI. Keep nap simple and consistent with sibling projects `~/code/npr` and `~/code/nvp`. Balance Omarchy minimalism with a tactile, skeuomorphic cassette player: filename label, spools that rotate only during playback, a waveform between them, and large square transport buttons below. Preserve five-second REW/FWD taps and continuous seeking while held. Follow sibling keyboard conventions, including `?` for help, Space for play/pause, `b` for bookmark, and `q` for quit.
+Read [brief.md](brief.md) before changing behavior or UI. Keep nap simple and consistent with sibling projects `~/code/npr` and `~/code/nvp`. Balance Omarchy minimalism with a tactile, skeuomorphic cassette player: filename label, spools that rotate only during playback, a waveform between them, and large square transport buttons below. Preserve five-second REW/FWD taps and continuous seeking while held. Follow sibling keyboard conventions, including `?` for help, Space for play/pause, `b` for bookmark, `i` for the insert, and `q` for quit.
 
 ## Project Structure & Module Organization
 
 nap is a Linux audio player built with Rust 2024, C++17, and Qt 6.8+.
 
-- `src/*.rs`: CLI parsing, playback policy, bookmarks, themes, desktop installation, and the C ABI in `ffi.rs`.
+- `src/*.rs`: CLI parsing, playback policy, bookmarks, tag reading for the insert (`insert.rs`, via lofty), themes, desktop installation, and the C ABI in `ffi.rs`.
 - `native/`: Qt Multimedia adapter. Keep policy in Rust and Qt objects here.
-- `src/Main.qml`, `Reel.qml`, `Transport.qml`: interface; `resources.qrc` registers QML resources.
+- `src/Main.qml`, `Reel.qml`, `Transport.qml`, `Insert.qml`: interface; `resources.qrc` registers QML resources.
 - `build.rs`: compiles native code and embeds resources.
 - `tests/`: Rust integration tests, Qt Test coverage, and Python CLI/render smoke checks.
 - `hypr/nap.lua` and `nap.desktop`: desktop integration. Build output: `target/` and `build/`.

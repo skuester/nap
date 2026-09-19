@@ -78,6 +78,10 @@ private slots:
         QTest::keyClick(w, Qt::Key_Return); QVERIFY(p.position() >= 5000);
         QTest::keyClick(w, Qt::Key_B, Qt::ShiftModifier); QCOMPARE(p.bookmark(), -1);
         QTest::keyClick(w, Qt::Key_L); QVERIFY(p.looping());
+        QTest::keyClick(w, Qt::Key_I); QVERIFY(w->property("insertVisible").toBool());
+        QCOMPARE(p.insert()["file"].toList().first().toList().last().toString(), QString("WAV"));
+        QTest::qWait(700); QVERIFY(w->grabWindow().save("build/insert-preview.png"));
+        QTest::keyClick(w, Qt::Key_Escape); QVERIFY(!w->property("insertVisible").toBool());
         QTest::keyClick(w, Qt::Key_K); QVERIFY(w->property("helpVisible").toBool());
         QTest::keyClick(w, Qt::Key_Escape); QVERIFY(!w->property("helpVisible").toBool());
         auto *key = w->findChild<QQuickItem *>("playKey"); QVERIFY(key);

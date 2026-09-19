@@ -6,6 +6,8 @@ keyboard-first desktop as npr and nvp.
 
 ![nap cassette deck](docs/preview.png)
 
+![the unfolded insert](docs/insert.png)
+
 ## Build and run
 
 Requires Linux, a Rust toolchain, a C++17 compiler, Make, pkg-config, and Qt **6.8 or later** with Quick,
@@ -57,6 +59,9 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
 - **PLAY / PAUSE, STOP, OPEN:** physical-style keys. Stop returns to the beginning.
 - **Lower cassette ridges:** click, drag, or scroll to set the player's volume.
 - **LOOP / MARK:** toggle repeat or save your place. LOOP latches down; each key's lamp lights while it applies.
+- **Paper tab behind the tape:** pull it (or press I) to unfold the insert, a J-card with the
+  embedded cover art, a spine, and liner notes listing the lyrics, every tag in the file
+  (custom fields included), and its technical details. Files without art get a typeset cover.
 - **Plastic window:** a waveform drawn from decoded PCM samples, with no synthetic animation.
   Reels rotate only while playing, the thinner pack turning faster; tape transfers from the left spool to the right.
 
@@ -76,6 +81,7 @@ and AIFF; actual decoding support follows the installed Qt FFmpeg backend.
 | B | Bookmark current position |
 | Shift+B | Remove bookmark |
 | Enter | Return to bookmark |
+| I | Unfold / put away the insert (↑ ↓ PgUp PgDn scroll it) |
 | O / Ctrl+O | Open file |
 | ? / K | Toggle help |
 | Esc | Close help |
