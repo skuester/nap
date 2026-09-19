@@ -47,6 +47,7 @@ public:
     Q_INVOKABLE void toggleMute();
     Q_INVOKABLE void toggleLoop();
     Q_INVOKABLE void saveBookmark(bool remove = false);
+    Q_INVOKABLE void openFolder();
 signals:
     void changed();
     void waveChanged();

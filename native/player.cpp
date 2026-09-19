@@ -1,5 +1,6 @@
 #include "player.h"
 #include <QAudioBuffer>
+#include <QDesktopServices>
 #include <QFileInfo>
 #include <QMediaMetaData>
 
@@ -86,6 +87,11 @@ void Player::saveBookmark(bool remove) {
     if (result.contains("error")) { emit notice("Bookmark failed: " + result["error"].toString()); return; }
     mark = result["mark"].toInteger(-1); emit changed();
     emit notice(result["notice"].toString());
+}
+void Player::openFolder() {
+    if (path.isEmpty()) return;
+    const auto folder = QFileInfo(path).absolutePath();
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(folder))) emit notice("Cannot open " + folder);
 }
 // The insert is read on first look, not on open: the cover can be large and most plays never unfold it.
 QVariantMap Player::insert() {

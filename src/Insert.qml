@@ -14,6 +14,7 @@ Item {
     property color scrim: "#000000"
     property string mono: "monospace"
     signal dismissed()
+    signal folderRequested()
     readonly property bool tagged: (card.tags || []).length > 0
     readonly property string title: card.title || filename
     readonly property string byline: card.artist || (tagged ? "" : "No tags in this file")
@@ -122,14 +123,29 @@ Item {
                     }
                     component Rows: Column {
                         property var rows: []
+                        property string link: ""
+                        signal followed()
                         width: prose.width; spacing: 5
                         Repeater {
                             model: parent.rows
                             Row {
+                                id: entry
                                 required property var modelData
+                                readonly property bool linked: modelData[0] === parent.link
                                 width: prose.width; spacing: 8
                                 Text { width: 104; text: modelData[0]; wrapMode: Text.Wrap; font.family: insert.mono; font.pixelSize: 10; color: insert.inkDim }
-                                Text { width: parent.width - 112; text: modelData[1]; wrapMode: Text.Wrap; textFormat: Text.PlainText; font.family: insert.mono; font.pixelSize: 10; color: insert.ink }
+                                Text {
+                                    width: parent.width - 112; text: modelData[1]; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                                    font.family: insert.mono; font.pixelSize: 10; font.underline: entry.linked; color: insert.ink
+                                    opacity: follow.containsMouse ? 0.6 : 1
+                                    MouseArea {
+                                        id: follow
+                                        anchors.fill: parent; enabled: entry.linked; hoverEnabled: true
+                                        cursorShape: entry.linked ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                        onClicked: entry.parent.followed()
+                                        Accessible.role: Accessible.Link; Accessible.name: "Open " + entry.modelData[1]
+                                    }
+                                }
                             }
                         }
                     }
@@ -139,7 +155,7 @@ Item {
                     Text { visible: !insert.tagged; width: prose.width; text: "This file carries no tags, so the label shows its name."; wrapMode: Text.Wrap; lineHeight: 1.45; font.family: insert.mono; font.pixelSize: 10; color: insert.inkDim }
                     Rows { rows: insert.card.tags || []; bottomPadding: 8 }
                     Heading { text: "File" }
-                    Rows { rows: insert.card.file || [] }
+                    Rows { rows: insert.card.file || []; link: "Folder"; onFollowed: insert.folderRequested() }
                 }
             }
             Rectangle {

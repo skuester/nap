@@ -117,9 +117,10 @@ ApplicationWindow {
                 Rectangle {
                     id: insertBadge
                     objectName: "insertBadge"
-                    readonly property color mark: badgeArea.containsMouse ? paper : ink
+                    // Quieter than the title and side mark until the pointer finds it.
+                    readonly property color mark: badgeArea.containsMouse ? paper : inkDim
                     x: 530; y: 16; width: 30; height: 30; radius: 3; visible: deck.loaded
-                    color: badgeArea.containsMouse ? ink : "transparent"; border.color: ink; border.width: 2
+                    color: badgeArea.containsMouse ? ink : "transparent"; border.color: badgeArea.containsMouse ? ink : inkDim; border.width: 2
                     Rectangle { x: 7; y: 7; width: 7; height: 7; color: parent.mark }
                     Rectangle { x: 16; y: 7; width: 7; height: 2; color: parent.mark }
                     Rectangle { x: 16; y: 12; width: 7; height: 2; color: parent.mark }
@@ -277,6 +278,7 @@ ApplicationWindow {
             lengthClass: win.lengthClass
             paper: win.paper; ink: win.ink; inkDim: win.inkDim; stripe: win.stripe; scrim: Qt.alpha(bg, 0.88); mono: win.mono
             onDismissed: win.showInsert(false)
+            onFolderRequested: deck.openFolder()
         }
     }
     Rectangle {

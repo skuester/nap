@@ -61,7 +61,7 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
 - **LOOP / MARK:** toggle repeat or save your place. LOOP latches down; each key's lamp lights while it applies.
 - **Boxed icon on the label:** click it (or press I) to unfold the insert, a J-card with the
   embedded cover art, a spine, and liner notes listing the lyrics, every tag in the file
-  (custom fields included), and its technical details. Files without art get a typeset cover.
+  (custom fields included), and its technical details. Click the folder to open it in your file manager. Files without art get a typeset cover.
 - **Plastic window:** a waveform drawn from decoded PCM samples, with no synthetic animation.
   Reels rotate only while playing, the thinner pack turning faster; tape transfers from the left spool to the right.
 

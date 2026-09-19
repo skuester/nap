@@ -7,12 +7,16 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
+#include <QDesktopServices>
 #include <cmath>
 
 class PlayerTest : public QObject {
     Q_OBJECT
     QTemporaryDir directory;
     QString audio;
+    QUrl opened;
+public slots:
+    void openedUrl(const QUrl &url) { opened = url; }
 private slots:
     void initTestCase() {
         audio = directory.filePath("A test tape.wav");
@@ -57,6 +61,10 @@ private slots:
         p.setVolume(-5); QCOMPARE(p.volume(), 0.0);
         p.setVolume(5); QCOMPARE(p.volume(), 1.0);
         p.toggleMute(); QVERIFY(p.muted());
+        // Catch the file-manager launch instead of opening a real window.
+        QDesktopServices::setUrlHandler("file", this, "openedUrl");
+        p.openFolder(); QCOMPARE(opened, QUrl::fromLocalFile(QFileInfo(audio).absolutePath()));
+        QDesktopServices::unsetUrlHandler("file");
         p.openFile(directory.filePath("missing.wav"));
         QVERIFY(notices.last()[0].toString().contains("Cannot open"));
     }
