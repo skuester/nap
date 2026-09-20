@@ -5,6 +5,7 @@
     <comment>nap mixtape</comment>
     <!-- A plain tar of one folder: index, cover, and audio. Archive tools can still open it. -->
     <sub-class-of type="application/x-tar"/>
+    <!-- Drawn in icons/application-x-nap-tape.svg; the generic one is for themes without it. -->
     <generic-icon name="audio-x-generic"/>
     <glob pattern="*.tape"/>
   </mime-type>

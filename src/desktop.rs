@@ -182,6 +182,23 @@ fn symlink(source: &Path, destination: &Path) -> Result<(), String> {
     fs::create_dir_all(destination.parent().ok_or("missing install directory")?).map_err(|e| e.to_string())?;
     std::os::unix::fs::symlink(source, destination).map_err(|e| e.to_string())
 }
+/// Everything linked from the checkout into the prefix: the program, its desktop entry, the
+/// definitions of its file types, and the icons for all three.
+pub const LINKS: [(&str, &str); 6] = [
+    ("target/release/nap", "bin/nap"),
+    ("nap.desktop", "share/applications/nap.desktop"),
+    ("nap-mime.xml", MIME_PACKAGE),
+    ("icons/nap.svg", "share/icons/hicolor/scalable/apps/nap.svg"),
+    ("icons/application-x-nap-tape.svg", "share/icons/hicolor/scalable/mimetypes/application-x-nap-tape.svg"),
+    ("icons/application-x-nap-jcard.svg", "share/icons/hicolor/scalable/mimetypes/application-x-nap-jcard.svg"),
+];
+const ICON_THEME: &str = "share/icons/hicolor";
+
+/// Toolkits trust an icon theme's cache until the theme directory looks newer than it.
+fn touch(directory: &Path) {
+    let _ = fs::File::open(directory).and_then(|dir| dir.set_modified(std::time::SystemTime::now()));
+}
+
 pub fn install_desktop(
     checkout: &Path,
     prefix: &Path,
@@ -190,32 +207,32 @@ pub fn install_desktop(
     backend: &impl MimeBackend,
 ) -> Result<(), String> {
     // Check all required sources before changing the installation.
-    for file in ["target/release/nap", "nap.desktop", "nap-mime.xml", "hypr/nap.lua"] {
-        if !checkout.join(file).is_file() {
-            return Err(format!("missing {file}; build the release binary first"));
-        }
+    let sources = LINKS.iter().map(|(source, _)| *source).chain(["hypr/nap.lua"]);
+    if let Some(missing) = sources.into_iter().find(|file| !checkout.join(file).is_file()) {
+        return Err(format!("missing {missing}; build the release binary first"));
     }
     if !config.join("hypr/hyprland.lua").is_file() {
         return Err("missing Hyprland Lua configuration".into());
     }
     install::install(&config.join("hypr"), install::Source::Link(checkout.join("hypr/nap.lua")))?;
-    symlink(&checkout.join("target/release/nap"), &prefix.join("bin/nap"))?;
-    symlink(&checkout.join("nap.desktop"), &prefix.join("share/applications/nap.desktop"))?;
+    for (source, destination) in LINKS {
+        symlink(&checkout.join(source), &prefix.join(destination))?;
+    }
+    touch(&prefix.join(ICON_THEME));
     // The desktop must know what a .tape is before nap can become its default.
-    symlink(&checkout.join("nap-mime.xml"), &prefix.join(MIME_PACKAGE))?;
     backend.refresh(&prefix.join("share"))?;
     install_mimes(backend, &state.join("nap/previous-audio-handlers.json"))
 }
 pub fn uninstall_desktop(prefix: &Path, config: &Path, state: &Path, backend: &impl MimeBackend) -> Result<(), String> {
     uninstall_mimes(backend, &state.join("nap/previous-audio-handlers.json"))?;
     install::uninstall(&config.join("hypr"))?;
-    let package = prefix.join(MIME_PACKAGE);
-    let defined = fs::symlink_metadata(&package).is_ok();
-    for file in [prefix.join("bin/nap"), prefix.join("share/applications/nap.desktop"), package] {
+    let defined = fs::symlink_metadata(prefix.join(MIME_PACKAGE)).is_ok();
+    for file in LINKS.iter().map(|(_, destination)| prefix.join(destination)) {
         if fs::symlink_metadata(&file).is_ok() {
             fs::remove_file(file).map_err(|e| e.to_string())?;
         }
     }
+    touch(&prefix.join(ICON_THEME));
     // Forget the types too, but only if this prefix ever defined them.
     if defined { backend.refresh(&prefix.join("share")) } else { Ok(()) }
 }

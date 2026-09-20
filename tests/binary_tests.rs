@@ -101,7 +101,7 @@ fn hyprland_rules_install_and_uninstall_in_a_temporary_config() {
 fn desktop_integration_installs_and_uninstalls_under_a_temporary_prefix() {
     let sandbox = Sandbox::new();
     let checkout = sandbox.path("checkout");
-    for file in ["target/release/nap", "nap.desktop", "nap-mime.xml", "hypr/nap.lua"] {
+    for file in nap::desktop::LINKS.iter().map(|(source, _)| *source).chain(["hypr/nap.lua"]) {
         fs::create_dir_all(checkout.join(file).parent().unwrap()).unwrap();
         fs::write(checkout.join(file), "stand-in").unwrap();
     }
@@ -109,6 +109,7 @@ fn desktop_integration_installs_and_uninstalls_under_a_temporary_prefix() {
     assert!(stdout(&installed).starts_with("nap installed"), "{installed:?}");
     assert!(sandbox.path("prefix/bin/nap").exists());
     assert!(sandbox.path("prefix/share/mime/packages/nap.xml").exists());
+    assert!(sandbox.path("prefix/share/icons/hicolor/scalable/apps/nap.svg").exists());
     let removed = sandbox.nap(&["--uninstall-desktop"]);
     assert!(stdout(&removed).starts_with("nap removed"), "{removed:?}");
     assert!(!sandbox.path("prefix/bin/nap").exists());

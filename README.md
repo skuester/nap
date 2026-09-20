@@ -64,6 +64,10 @@ it into `~/.local/share/mime/packages`, then runs `update-mime-database` and
 open it. Selecting several audio files and opening them with nap lines them up as one tape.
 Uninstall removes the definitions again.
 
+nap and its two file types have their own icons, in [`icons/`](icons): the deck for the
+application, a cassette for a `.tape`, and an unfolded J-card for a `.jcard`. They are linked into
+the prefix's hicolor icon theme under the names the icon theme specification looks up.
+
 `nap --install-hyprland [--link path/to/hypr/nap.lua]` and
 `nap --uninstall-hyprland` manage just the window rules. An active Hyprland session
 is reloaded and checked for configuration errors after installation/removal.

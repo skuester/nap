@@ -13,7 +13,7 @@ nap is a Linux audio player built with Rust 2024, C++17, and Qt 6.8+.
 - `src/Main.qml`, `Reel.qml`, `Transport.qml`, `Insert.qml`, `Scope.qml`: interface; `resources.qrc` registers QML resources.
 - `build.rs`: compiles native code and embeds resources.
 - `tests/`: Rust integration tests, Qt Test coverage, and Python CLI/render smoke checks.
-- `hypr/nap.lua`, `nap.desktop`, and `nap-mime.xml` (the `.tape` and `.jcard` types): desktop integration. Build output: `target/` and `build/`.
+- `hypr/nap.lua`, `nap.desktop`, and `nap-mime.xml` (the `.tape` and `.jcard` types), and `icons/*.svg`: desktop integration. `desktop::LINKS` is the one table of what the installer links where. Build output: `target/` and `build/`.
 
 ## Build, Test, and Development Commands
 

@@ -1,5 +1,5 @@
 use nap::{
-    desktop::{self, MIME_TYPES, MimeBackend},
+    desktop::{self, LINKS, MIME_TYPES, MimeBackend},
     install,
 };
 use std::{cell::RefCell, collections::BTreeMap, fs};
@@ -77,7 +77,7 @@ fn installation_links_checkout_and_uninstalls_cleanly() {
     let prefix = temp.path().join("local");
     let config = temp.path().join("config");
     let state = temp.path().join("state");
-    for file in ["target/release/nap", "nap.desktop", "nap-mime.xml", "hypr/nap.lua"] {
+    for file in LINKS.iter().map(|(source, _)| *source).chain(["hypr/nap.lua"]) {
         let path = checkout.join(file);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, "test").unwrap();
@@ -93,6 +93,9 @@ fn installation_links_checkout_and_uninstalls_cleanly() {
     assert_eq!(fs::read_link(config.join("hypr/nap.lua")).unwrap(), checkout.join("hypr/nap.lua"));
     // nap's own file types are defined, the database rebuilt, and nap made their default.
     assert_eq!(fs::read_link(prefix.join(desktop::MIME_PACKAGE)).unwrap(), checkout.join("nap-mime.xml"));
+    for (source, destination) in LINKS {
+        assert_eq!(fs::read_link(prefix.join(destination)).unwrap(), checkout.join(source), "{destination}");
+    }
     assert_eq!(*backend.1.borrow(), vec![prefix.join("share"); 2]);
     assert_eq!(backend.current("application/x-nap-tape").unwrap(), "nap.desktop");
     assert_eq!(backend.current("application/x-nap-jcard").unwrap(), "nap.desktop");
@@ -102,6 +105,9 @@ fn installation_links_checkout_and_uninstalls_cleanly() {
     assert!(!prefix.join("bin/nap").exists());
     assert!(!prefix.join("share/applications/nap.desktop").exists());
     assert!(fs::symlink_metadata(prefix.join(desktop::MIME_PACKAGE)).is_err());
+    for (_, destination) in LINKS {
+        assert!(fs::symlink_metadata(prefix.join(destination)).is_err(), "{destination}");
+    }
     assert_eq!(backend.1.borrow().len(), 3, "removing the definitions rebuilds the database once more");
     assert_eq!(backend.current("application/x-nap-tape").unwrap(), "");
     // A prefix that never had them is left alone.
@@ -122,6 +128,13 @@ fn registry_matches_desktop_and_rules_preserve_aspect() {
     }
     assert!(package.contains("<glob pattern=\"*.tape\"/>") && package.contains("<glob pattern=\"*.jcard\"/>"));
     assert!(desktop.contains("Exec=nap %F"), "several selected files open as one tape");
+    // nap and each of its own types has an icon, named the way the icon theme spec looks them up.
+    assert!(desktop.contains("Icon=nap\n"));
+    for mime in MIME_TYPES.iter().filter(|mime| !mime.starts_with("audio/")) {
+        let icon = format!("icons/{}.svg", mime.replace('/', "-"));
+        assert!(LINKS.iter().any(|(source, to)| *source == icon && to.contains("/scalable/mimetypes/")), "{icon}");
+        assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(&icon).is_file(), "{icon}");
+    }
     for rule in ["keep_aspect_ratio = true", "float = true", "center = true", "^nap$"] {
         assert!(install::RULES_LUA.contains(rule));
     }

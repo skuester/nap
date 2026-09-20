@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>nap J-card</title>
+  <rect x="21" y="47" width="222" height="172" rx="4" fill="#000" opacity="0.35"/>
+  <rect x="16" y="40" width="108" height="172" rx="3" fill="#d39b85"/>
+  <rect x="26" y="50" width="76" height="76" fill="#2a1a24"/><path d="M26 118 A38 38 0 0 1 102 118 Z" fill="#c24f57"/><path d="M33 118 A31 31 0 0 1 95 118 Z" fill="#f28171"/><path d="M40 118 A24 24 0 0 1 88 118 Z" fill="#d39b85"/><path d="M47 118 A17 17 0 0 1 81 118 Z" fill="#806c61"/><path d="M54 118 A10 10 0 0 1 74 118 Z" fill="#684c59"/>
+  <rect x="26" y="118" width="76" height="8" fill="#2a1a24"/>
+  <rect x="26" y="136" width="62" height="6" rx="1" fill="#1c1213"/>
+  <rect x="26" y="150" width="76" height="3" fill="#1c1213" opacity="0.5"/><rect x="26" y="160" width="76" height="3" fill="#1c1213" opacity="0.5"/><rect x="26" y="170" width="76" height="3" fill="#1c1213" opacity="0.5"/><rect x="26" y="180" width="54" height="3" fill="#1c1213" opacity="0.5"/>
+  <rect x="124" y="40" width="18" height="172" fill="#1c1213"/>
+  <rect x="130" y="52" width="6" height="70" rx="1" fill="#d39b85"/>
+  <rect x="142" y="40" width="98" height="172" rx="3" fill="#d39b85"/><rect x="156" y="66" width="50" height="4" rx="1" fill="#1c1213" opacity="1"/><rect x="156" y="80" width="72" height="4" rx="1" fill="#1c1213" opacity="0.55"/><rect x="156" y="90" width="64" height="4" rx="1" fill="#1c1213" opacity="0.55"/><rect x="156" y="100" width="70" height="4" rx="1" fill="#1c1213" opacity="0.55"/><rect x="156" y="118" width="40" height="4" rx="1" fill="#1c1213" opacity="1"/><rect x="156" y="132" width="72" height="4" rx="1" fill="#1c1213" opacity="0.55"/><rect x="156" y="142" width="58" height="4" rx="1" fill="#1c1213" opacity="0.55"/><rect x="156" y="152" width="68" height="4" rx="1" fill="#1c1213" opacity="0.55"/><rect x="156" y="162" width="44" height="4" rx="1" fill="#1c1213" opacity="0.55"/><rect x="156" y="180" width="72" height="4" rx="1" fill="#1c1213" opacity="0.3"/><rect x="156" y="190" width="60" height="4" rx="1" fill="#1c1213" opacity="0.3"/>
+</svg>
