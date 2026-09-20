@@ -140,7 +140,7 @@ fn several_files_and_a_saved_tape_both_load() {
     let folder = sandbox.path("Handmade");
     fs::create_dir_all(&folder).unwrap();
     fs::copy(&a, folder.join("one.flac")).unwrap();
-    fs::write(folder.join("_index.jcard"), "#EXTM3U\n#PLAYLIST:Handmade\n\none.flac\n").unwrap();
+    fs::write(folder.join("tape.jcard"), "#EXTM3U\n#PLAYLIST:Handmade\n\none.flac\n").unwrap();
     let tape = sandbox.path("Handmade.tape");
     let tarred =
         Command::new("tar").arg("-cf").arg(&tape).arg("-C").arg(sandbox.path("")).arg("Handmade").status().unwrap();

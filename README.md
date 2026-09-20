@@ -62,7 +62,9 @@ nap's own file types are part of this. [`nap-mime.xml`](nap-mime.xml) defines
 `application/x-nap-tape` (`*.tape`) and `application/x-nap-jcard` (`*.jcard`); the installer links
 it into `~/.local/share/mime/packages`, then runs `update-mime-database` and
 `update-desktop-database`, so a file manager knows what a `.tape` is and that nap opens it. A
-`.tape` is declared a kind of tar, so archive tools still offer to open it. Selecting several
+`.tape` is declared a kind of tar, so archive tools still offer to open it, and it is known by
+what is in it as well as by its name: a tar whose first entry is a `tape.jcard` is a tape,
+whatever the file is called. Selecting several
 audio files and opening them with nap lines them up as one tape.
 Uninstall removes the definitions again.
 
@@ -162,36 +164,52 @@ OPEN is what would throw the tape away. Opening something else, or quitting, the
 twice: the first time nap only says the tape is unsaved; doing it again within a few seconds
 discards it.
 
-- **`Name.tape`** is self-contained: a plain, uncompressed tar of one folder holding the index,
-  the optional cover, and the audio. `tar -xf Name.tape` gets everything back out, and nap opens
-  it directly (unpacked to a private folder under `/tmp`, removed when the tape is replaced or
-  nap quits).
+- **`Name.tape`** is self-contained: a plain, uncompressed tar of one folder holding the index
+  (`tape.jcard`), the optional cover (`cover.jpg`, or whatever kind of image it is), and the
+  audio. `tar -xf Name.tape` gets everything back out. nap plays it as it is: because the tar is
+  not compressed, each track lies inside it whole, so a tape of any size opens at once and
+  nothing is unpacked anywhere. That is also why a tape is never compressed; the audio already
+  is. Entries carry no owner, so a tape says nothing about whose machine it was made on. A
+  tape can be saved over itself while it plays.
 - **`Name.jcard`** is the index alone, for tapes whose audio stays where it is. Choose it in the
-  save dialog, or write one by hand.
+  save dialog, or write one by hand. If some of its files have since gone missing, nap plays
+  the rest and says which it could not find.
 
-The index (`_index.jcard` inside an archive) is M3U-compatible text, so it is easy to edit and
-other players can read it. One track per line, in order; paths are relative to the index or
-absolute; `#` lines that nap does not know are ignored:
+The index is M3U-compatible text, so it is easy to edit and other players can read it. One track
+per line, in order; paths are relative to the index or absolute; `#` lines that nap does not
+know are ignored. Inside a `.tape` the index can list only what the tape holds:
 
 ```text
 #EXTM3U
+#EXTENC:UTF-8
+#NAP:1
 #PLAYLIST:Summer '98
-#EXTIMG:_cover.jpg
-#FROM:Shane
-#NOTE:Made this for the drive up.
-#NOTE:Side B is the good one.
+#EXTIMG:cover.jpg
+#NAP-FROM:Shane
+#NAP-NOTE:Made this for the drive up.
+#NAP-NOTE:Side B is the good one.
 
+#EXTINF:151,Boards of Canada - Roygbiv
 01 Roygbiv.flac
+#EXTINF:242,The Rapture - Don't Stop
 02 Don't Stop.mp3
 /home/me/Music/03 far away.ogg
 ```
 
-`#FROM:` and `#NOTE:` (one per line of the note) are nap's own. M3U has no field for either, but
-players skip `#` lines they do not know, so the file stays a valid playlist.
+The `#NAP` lines are nap's own; M3U has no field for them, but players skip `#` lines they do not
+know, so the file stays a valid playlist. `#NAP:` is the version of the format, so that a later
+nap can tell an old tape from a broken one, and this one refuses a tape from a nap newer than
+itself rather than misread it. `#NAP-FROM:` is who signed the tape and `#NAP-NOTE:` what they
+wrote, one per line of the note. `#EXTENC:` and `#EXTINF:` (length in seconds, then artist and
+title) are for other players, which otherwise guess at the encoding and show file names; nap
+reads titles and lengths from the audio itself, and uses `#EXTINF:` only to name a track that
+has gone missing. A file whose own name starts with `#` is written as `./#name`, so it is not
+taken for a comment.
 
 On a tape, PREV and NEXT move between tracks and always wrap around. When the last track ends the
 deck auto-stops, cued back at track one; with LOOP on the tape starts over instead. Bookmarks
-belong to single files, so tracks on a tape always start at their beginning.
+belong to single files, so tracks on a tape always start at their beginning, and a track inside a
+`.tape` has no file of its own to keep one on.
 
 ## Omarchy
 

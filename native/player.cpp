@@ -98,7 +98,12 @@ void Player::openFile(const QString &file, bool paused, qint64 start, bool ignor
     lifted = headLifted;
     loading = true;
     deck = "stopped"; // changing tapes lifts the head
-    media.setSource(QUrl::fromLocalFile(path));
+    // A track inside a tape plays from where it lies in the archive; nothing is unpacked.
+    const auto span = result["held"].toObject();
+    held.reset(span.isEmpty() ? nullptr : new Stretch(span["archive"].toString(), span["offset"].toInteger(), span["length"].toInteger()));
+    if (!held) media.setSource(QUrl::fromLocalFile(path));
+    else if (held->open(QIODevice::ReadOnly)) media.setSourceDevice(held.get(), QUrl::fromLocalFile(path));
+    else emit notice("Cannot open " + span["archive"].toString());
     card.clear();
     emit changed();
     emit insertChanged();
@@ -123,19 +128,23 @@ void Player::load(const QStringList &paths, bool paused, qint64 start, bool igno
     if (!mayDiscard("open")) return;
     const auto result = core.request({{"op", "load"}, {"paths", QJsonArray::fromStringList(paths)}});
     if (result.contains("error")) { emit notice(result["error"].toString()); return; }
-    startPaused = paused; pending = start; skipBookmark = ignore;
-    if (result["job"].toBool()) { poller.start(); poll(); return; }
     refreshTape();
     openFile(reel["tracks"].toList().value(0).toMap()["path"].toString(), paused, start, ignore || trackCount() > 1);
+    if (!result["notice"].toString().isEmpty()) emit notice(result["notice"].toString());
 }
 void Player::refreshTape() {
     reel = core.request({{"op", "tape"}}).toVariantMap();
+    // A cover held inside the tape comes over whole, so it is fetched only when it changes.
     const auto cover = reel["cover"].toString();
-    reel["coverUrl"] = cover.isEmpty() ? QUrl() : QUrl::fromLocalFile(cover);
+    if (cover != coverPath) {
+        coverPath = cover;
+        coverUrl = cover.isEmpty() ? QUrl() : reel["coverHeld"].toBool() ? QUrl(core.request({{"op", "cover"}})["url"].toString()) : QUrl::fromLocalFile(cover);
+    }
+    reel["coverUrl"] = coverUrl;
     media.setLoops(repeat && trackCount() < 2 ? QMediaPlayer::Infinite : 1);
     emit tapeChanged();
 }
-// An archive packs and unpacks on a core thread; this reports how far along it is.
+// An archive is packed on a core thread; this reports how far along it is.
 void Player::poll() {
     const auto report = core.request({{"op", "job"}});
     if (report["active"].toBool()) {
@@ -147,7 +156,6 @@ void Player::poll() {
     poller.stop(); fraction = -1; emit progressChanged();
     if (!report["notice"].toString().isEmpty()) emit notice(report["notice"].toString());
     refreshTape();
-    if (report["loaded"].toBool()) openFile(reel["tracks"].toList().value(0).toMap()["path"].toString(), startPaused, pending, true);
 }
 // Bring the track the core landed on under the head, playing or not.
 void Player::cue(const QJsonObject &landed, bool play) {
@@ -212,10 +220,11 @@ void Player::cycleVisualizer() {
 }
 // The folder of a track in the listing, or of the one that is up.
 void Player::openFolder(int track) {
-    const auto listed = reel["tracks"].toList().value(track).toMap()["path"].toString();
-    const auto file = listed.isEmpty() ? path : listed;
-    if (file.isEmpty()) return;
-    const auto folder = QFileInfo(file).absolutePath();
+    // The core knows where a listed track really is: one held inside a tape is wherever the tape is.
+    const auto tracks = reel["tracks"].toList();
+    const auto listed = tracks.value(track < 0 ? reel["index"].toInt() : track).toMap();
+    if (listed.isEmpty() && path.isEmpty()) return;
+    const auto folder = listed.isEmpty() ? QFileInfo(path).absolutePath() : listed["folder"].toString();
     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(folder))) emit notice("Cannot open " + folder);
 }
 // The insert is read on first look, not on open: the cover can be large and most plays never unfold it.

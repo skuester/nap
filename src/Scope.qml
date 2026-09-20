@@ -13,7 +13,7 @@ Rectangle {
     property var spectrum: []
     property var levels: []
     property real position: 0
-    // While a tape is being packed or unpacked the display becomes its progress bar.
+    // While a tape is being packed the display becomes its progress bar.
     property real progress: -1
     property string progressLabel: ""
     readonly property bool busy: progress >= 0

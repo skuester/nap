@@ -8,6 +8,7 @@
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QDesktopServices>
+#include <QImage>
 #include <cmath>
 
 // List rows live in the visual tree only, which QObject::findChild does not walk.
@@ -147,13 +148,65 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(p.tape()["name"].toString(), QString("Test Mix"), 5000);
         QCOMPARE(p.tape()["from"].toString(), QString("Shane")); QCOMPARE(p.tape()["note"].toString(), QString("Rewind before returning."));
         QTRY_COMPARE(p.duration(), 12000); QCOMPARE(files(), QStringList({"Second.wav", "Second.wav"}));
-        QVERIFY(p.tape()["tracks"].toList().first().toMap()["path"].toString().startsWith(QDir::tempPath()));
+        // The tape plays from where it lies: its tracks are named by where they sit inside it, and
+        // nothing has been unpacked anywhere.
+        QCOMPARE(p.tape()["tracks"].toList().first().toMap()["path"].toString(), saved + "/Test Mix/Second.wav");
+        QVERIFY(!QFileInfo::exists(saved + "/Test Mix/Second.wav")); QVERIFY(p.loaded());
+        QCOMPARE(p.filename(), QString("Second.wav")); QVERIFY(p.detail().startsWith("WAV"));
+        // A held track seeks, plays, and feeds the display like any file.
+        p.seek(7000); QTRY_COMPARE(p.position(), 7000);
+        p.toggle(); QTRY_VERIFY(p.playing()); QTRY_VERIFY_WITH_TIMEOUT(p.position() > 7100, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(p.spectrum().size() == 24, 5000);
+        int loudest = 0;
+        for (int i = 0; i < 24; ++i) if (p.spectrum()[i].toDouble() > p.spectrum()[loudest].toDouble()) loudest = i;
+        QCOMPARE(loudest, 9);
+        p.seek(500); QTRY_VERIFY_WITH_TIMEOUT(p.position() >= 500 && p.position() < 2000, 5000);
+        p.seek(11850); QTRY_VERIFY_WITH_TIMEOUT(p.stopped(), 5000);
+        // It has nowhere of its own to keep a bookmark, and says so.
+        p.saveBookmark(); QVERIFY(notices.last()[0].toString().contains("inside a tape")); QCOMPARE(p.bookmark(), -1);
         QDesktopServices::setUrlHandler("file", this, "openedUrl");
-        p.openFolder(0); QVERIFY(opened.toLocalFile().startsWith(QDir::tempPath()));
+        p.openFolder(0); QCOMPARE(opened, QUrl::fromLocalFile(directory.path()));
+        opened.clear(); p.openFolder(); QCOMPARE(opened, QUrl::fromLocalFile(directory.path()));
         QDesktopServices::unsetUrlHandler("file");
+        // Going back to a file of its own lets go of the archive.
+        p.load({audio}, true); QTRY_COMPARE(p.duration(), 12000); QCOMPARE(p.filename(), first);
         p.load({directory.filePath("absent.tape")});
-        QTRY_VERIFY_WITH_TIMEOUT(notices.last()[0].toString().contains("absent.tape"), 5000);
+        QVERIFY(notices.last()[0].toString().contains("absent.tape"));
         p.playTrack(9); QCOMPARE(notices.last()[0].toString(), QString("No such track"));
+    }
+    // Every container plays from inside a tape just as it does from a file of its own: some keep
+    // their index at the end, so this is as much about seeking within the stretch as reading it.
+    void everyFormatPlaysFromInsideATape() {
+        Player p; p.setVolume(0); QSignalSpy notices(&p, &Player::notice);
+        QStringList fixtures;
+        for (const auto &name : QDir("tests/fixtures").entryList({"silence.*"}, QDir::Files, QDir::Name)) fixtures << QDir("tests/fixtures").absoluteFilePath(name);
+        QVERIFY(fixtures.size() >= 8);
+        QList<qint64> lengths;
+        for (const auto &fixture : fixtures) {
+            p.openFile(fixture, true); QTRY_VERIFY_WITH_TIMEOUT(p.duration() > 0, 5000);
+            lengths << p.duration();
+        }
+        p.load(fixtures, true); QTRY_VERIFY_WITH_TIMEOUT(p.duration() > 0, 5000);
+        const QString art = directory.filePath("art.png");
+        QImage picture(8, 8, QImage::Format_RGB32); picture.fill(Qt::darkCyan); QVERIFY(picture.save(art));
+        p.setCover(QUrl::fromLocalFile(art)); QCOMPARE(p.tape()["coverUrl"].toUrl(), QUrl::fromLocalFile(art));
+        const QString saved = directory.filePath("Formats.tape");
+        p.exportTape(QUrl::fromLocalFile(saved));
+        QTRY_VERIFY_WITH_TIMEOUT(p.progress() < 0 && QFile::exists(saved), 5000);
+        p.load({saved}, true);
+        QCOMPARE(p.tape()["tracks"].toList().size(), fixtures.size());
+        // The cover is inside the tape too, so it comes over whole rather than as a path, and still decodes.
+        const auto cover = p.tape()["coverUrl"].toUrl().toString();
+        QVERIFY(cover.startsWith("data:image/png;base64,"));
+        QCOMPARE(QImage::fromData(QByteArray::fromBase64(cover.section(',', 1).toLatin1())).size(), QSize(8, 8));
+        for (int i = 0; i < fixtures.size(); ++i) {
+            p.stop(); p.playTrack(i);
+            QTRY_COMPARE_WITH_TIMEOUT(p.filename(), QFileInfo(fixtures[i]).fileName(), 5000);
+            QTRY_VERIFY2_WITH_TIMEOUT(p.duration() == lengths[i], qPrintable(fixtures[i]), 5000);
+            // The listing read its length through the same stretch.
+            QVERIFY(p.insertOf(i)["file"].toList().size() > 3);
+        }
+        for (const auto &said : notices) QVERIFY2(!said[0].toString().startsWith("Cannot"), qPrintable(said[0].toString()));
     }
     void keyboardAndWindow() {
         Player p; p.setVolume(0);

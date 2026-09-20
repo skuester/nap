@@ -3,6 +3,7 @@
 //! comments, freeform MP4 atoms, APE items) are read from each format's own tag so nothing is left out.
 
 use crate::app::file_size;
+use crate::tape::{Brief, Source, Window};
 use lofty::ape::ApeTag;
 use lofty::config::ParseOptions;
 use lofty::file::{AudioFile, FileType, TaggedFile, TaggedFileExt};
@@ -13,9 +14,7 @@ use lofty::picture::PictureType;
 use lofty::probe::Probe;
 use lofty::tag::{ItemKey, ItemValue, Tag, TagType};
 use serde_json::{Value, json};
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
+use std::io::{BufReader, Read};
 
 /// Covers beyond this are skipped rather than pushed through the JSON boundary.
 const COVER_LIMIT: usize = 12 * 1024 * 1024;
@@ -156,7 +155,7 @@ impl Native<'_> {
 trait NativeTags: AudioFile + Sized {
     fn native(&self) -> Native<'_>;
 
-    fn gather(reader: &mut BufReader<File>, rows: &mut Rows) -> Option<()> {
+    fn gather(reader: &mut BufReader<Window>, rows: &mut Rows) -> Option<()> {
         let file = Self::read_from(reader, ParseOptions::new().read_cover_art(false)).ok()?;
         file.native().extras(rows);
         Some(())
@@ -224,8 +223,8 @@ impl NativeTags for lofty::musepack::MpcFile {
 }
 
 /// Fields the format-neutral view cannot name, read from the format's own tag.
-fn extras(path: &Path, kind: FileType, rows: &mut Rows) -> Option<()> {
-    let reader = &mut BufReader::new(File::open(path).ok()?);
+fn extras(source: &Source, kind: FileType, rows: &mut Rows) -> Option<()> {
+    let reader = &mut BufReader::new(source.open().ok()?);
     match kind {
         FileType::Flac => lofty::flac::FlacFile::gather(reader, rows),
         FileType::Vorbis => lofty::ogg::VorbisFile::gather(reader, rows),
@@ -301,15 +300,16 @@ fn audio_rows(tagged: &TaggedFile, rows: &mut Rows) {
     }
 }
 
-fn file_rows(path: &Path, tagged: Option<&TaggedFile>) -> Rows {
+fn file_rows(source: &Source, tagged: Option<&TaggedFile>) -> Rows {
     let mut rows = Rows::new();
     if let Some(tagged) = tagged {
         audio_rows(tagged, &mut rows);
     }
-    let size = std::fs::metadata(path).map(|meta| file_size(meta.len())).unwrap_or_default();
+    let size = if source.is_there() { file_size(source.size()) } else { String::new() };
     push(&mut rows, "Size".into(), &size);
-    push(&mut rows, "File".into(), &path.file_name().unwrap_or_default().to_string_lossy());
-    push(&mut rows, "Folder".into(), &path.parent().unwrap_or(Path::new("")).to_string_lossy());
+    push(&mut rows, "File".into(), &source.path.file_name().unwrap_or_default().to_string_lossy());
+    // A track held inside a tape is wherever the tape is.
+    push(&mut rows, "Folder".into(), &source.file().parent().unwrap_or("".as_ref()).to_string_lossy());
     rows
 }
 
@@ -358,32 +358,59 @@ fn cover(file: &TaggedFile) -> String {
     let pictures = || file.tags().iter().flat_map(|t| t.pictures());
     let front = pictures().find(|p| p.pic_type() == PictureType::CoverFront).or_else(|| pictures().next());
     let Some(picture) = front.filter(|p| p.data().len() <= COVER_LIMIT) else { return String::new() };
-    let mime = picture.mime_type().map_or("image/jpeg", |m| m.as_str());
-    format!("data:{mime};base64,{}", base64(picture.data()))
+    data_url(picture.mime_type().map_or("image/jpeg", |m| m.as_str()), picture.data())
+}
+
+/// A picture as a data URL the interface can show.
+pub fn data_url(mime: &str, data: &[u8]) -> String {
+    format!("data:{mime};base64,{}", base64(data))
+}
+
+/// The cover of a tape that is held inside it, as a data URL; empty if it is too large to pass on.
+pub fn held_cover(cover: &Source) -> String {
+    let mut data = Vec::new();
+    let read = cover.open().and_then(|window| window.take(COVER_LIMIT as u64 + 1).read_to_end(&mut data));
+    if read.is_err() || data.len() > COVER_LIMIT {
+        return String::new();
+    }
+    let ext = cover.path.extension().unwrap_or_default().to_string_lossy().to_lowercase();
+    data_url(&format!("image/{}", if ext == "jpg" { "jpeg" } else { &ext }), &data)
+}
+
+/// Tags are read through a window, so a track inside a tape reads like any other. The name says
+/// what kind of file to expect; what is in it has the last word.
+fn probe(source: &Source, options: ParseOptions) -> Option<TaggedFile> {
+    let reader = BufReader::new(source.open().ok()?);
+    let named = FileType::from_path(&source.path);
+    let probe = Probe::new(reader).options(options);
+    let probe = match named {
+        Some(kind) => probe.set_file_type(kind),
+        None => probe,
+    };
+    probe.guess_file_type().ok()?.read().ok()
 }
 
 /// Everything the insert prints, as JSON for the Qt side.
-pub fn read(path: &Path) -> Value {
-    let tagged = Probe::open(path).ok().and_then(|p| p.guess_file_type().ok()).and_then(|p| p.read().ok());
+pub fn read(source: &Source) -> Value {
+    let tagged = probe(source, ParseOptions::new());
     let rows = |rows: Rows| rows.into_iter().map(|(label, value)| json!([label, value])).collect::<Vec<_>>();
     let mut card = json!({"title": "", "artist": "", "album": "", "year": "", "lyrics": "", "cover": "", "tags": []});
     if let Some(file) = &tagged {
         let mut tags = tag_rows(file);
-        extras(path, file.file_type(), &mut tags);
+        extras(source, file.file_type(), &mut tags);
         card = json!({"title": first(file, ItemKey::TrackTitle), "artist": first(file, ItemKey::TrackArtist),
             "album": first(file, ItemKey::AlbumTitle), "year": year(file), "lyrics": lyrics(file),
             "cover": cover(file), "tags": rows(tags)});
     }
-    card["file"] = json!(rows(file_rows(path, tagged.as_ref())));
+    card["file"] = json!(rows(file_rows(source, tagged.as_ref())));
     card
 }
 
 /// A track listing's worth: title, artist, and length in seconds, empty where the file says nothing.
-pub fn brief(path: &Path) -> (String, String, u64) {
-    let options = ParseOptions::new().read_cover_art(false);
-    let file =
-        Probe::open(path).ok().and_then(|p| p.options(options).guess_file_type().ok()).and_then(|p| p.read().ok());
-    file.map_or_else(Default::default, |file| {
-        (first(&file, ItemKey::TrackTitle), first(&file, ItemKey::TrackArtist), file.properties().duration().as_secs())
+pub fn brief(source: &Source) -> Brief {
+    probe(source, ParseOptions::new().read_cover_art(false)).map_or_else(Brief::default, |file| Brief {
+        title: first(&file, ItemKey::TrackTitle),
+        artist: first(&file, ItemKey::TrackArtist),
+        seconds: file.properties().duration().as_secs(),
     })
 }

@@ -1,8 +1,8 @@
 //! What is in the deck: the current tape, which of its tracks is up, and any archive being
-//! packed or unpacked in the background. A lone audio file is a tape of one unnamed track.
+//! packed in the background. A lone audio file is a tape of one unnamed track.
 
 use crate::insert;
-use crate::tape::{self, Kind, Tape};
+use crate::tape::{self, Brief, Kind, Source, Tape};
 use crate::transport;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -15,16 +15,12 @@ use std::time::{Duration, Instant};
 /// How long a warning about unsaved work waits for the same thing to be asked again.
 pub const SECOND_THOUGHTS: Duration = Duration::from_secs(6);
 
-enum Outcome {
-    Imported(Tape, PathBuf),
-    Exported(PathBuf),
-}
-
 struct Job {
     label: String,
     total: u64,
     done: Arc<AtomicU64>,
-    handle: JoinHandle<Result<Outcome, String>>,
+    /// Where the tape was saved, once it has been.
+    handle: JoinHandle<Result<PathBuf, String>>,
 }
 
 #[derive(Default)]
@@ -32,9 +28,10 @@ pub struct Session {
     tape: Tape,
     index: usize,
     dirty: bool,
-    scratch: Option<PathBuf>,
     job: Option<Job>,
-    briefs: HashMap<PathBuf, (String, String, u64)>,
+    briefs: HashMap<PathBuf, Brief>,
+    /// The cover held inside the tape, as the interface wants it, and which cover that was.
+    cover: Option<(PathBuf, String)>,
     /// What was last refused because the tape is unsaved, and when.
     warned: Option<(String, Instant)>,
 }
@@ -48,91 +45,91 @@ fn file_name(path: &Path) -> String {
 }
 
 impl Session {
-    pub fn current(&self) -> Option<&PathBuf> {
+    pub fn current(&self) -> Option<&Source> {
         self.tape.tracks.get(self.index)
     }
 
+    /// The track listed at `path`, if the tape has one.
+    pub fn listed(&self, path: &Path) -> Option<&Source> {
+        self.tape.tracks.iter().find(|track| track.path == path)
+    }
+
     fn track(&self, index: usize) -> Value {
-        json!({"index": index, "path": self.tape.tracks.get(index), "position": 0})
+        json!({"index": index, "path": self.tape.tracks.get(index).map(|track| &track.path), "position": 0})
     }
 
-    /// Put a tape in the deck, discarding whatever an earlier archive left in scratch space.
-    fn insert_tape(&mut self, tape: Tape, scratch: Option<PathBuf>) {
-        if let Some(old) = std::mem::replace(&mut self.scratch, scratch) {
-            let _ = std::fs::remove_dir_all(old);
-        }
+    /// Put a tape in the deck. The reply mentions any tracks it lists that could not be found.
+    fn insert_tape(&mut self, (tape, missing): (Tape, Vec<String>)) -> Value {
         (self.tape, self.index, self.dirty) = (tape, 0, false);
-    }
-
-    fn start(
-        &mut self,
-        label: String,
-        total: u64,
-        work: impl FnOnce(&AtomicU64) -> Result<Outcome, String> + Send + 'static,
-    ) {
-        let done = Arc::new(AtomicU64::new(0));
-        let progress = done.clone();
-        self.job = Some(Job { label, total, done, handle: std::thread::spawn(move || work(&progress)) });
-    }
-
-    fn import(&mut self, archive: PathBuf) -> Result<Value, String> {
-        let into = tape::scratch(&tape::scratch_root(), &archive)?;
-        let (label, total) = (format!("Loading {}", file_name(&archive)), tape::archive_size(&archive));
-        self.start(label, total, move |done| {
-            // A tape that will not unpack leaves nothing behind.
-            let unpacked = tape::extract(&archive, &into, done).inspect_err(|_| drop(std::fs::remove_dir_all(&into)));
-            unpacked.map(|tape| Outcome::Imported(tape, into))
-        });
-        Ok(json!({"job": true}))
+        let notice = match missing.len() {
+            0 => String::new(),
+            1 => format!("Could not find {}", missing[0]),
+            n => format!("Could not find {n} of this tape's tracks: {}", missing.join(", ")),
+        };
+        json!({"notice": notice})
     }
 
     /// Open `paths` as the new tape, or with `append` add their audio to the current one.
     pub fn load(&mut self, request: &Value) -> Result<Value, String> {
         let paths = paths(request);
-        let audio: Vec<PathBuf> =
-            paths.iter().filter(|p| matches!(tape::kind(p), Kind::Audio | Kind::Other)).cloned().collect();
+        let audio: Vec<Source> =
+            paths.iter().filter(|p| matches!(tape::kind(p), Kind::Audio | Kind::Other)).map(Source::from).collect();
         if request["append"].as_bool().unwrap_or(false) {
             self.dirty |= !audio.is_empty();
             self.tape.tracks.extend(audio);
-            return Ok(json!({"job": false}));
+            return Ok(json!({"notice": ""}));
         }
+        // A tape is played from where it is, so even an archive is in the deck at once.
         match paths.first().map(|first| (tape::kind(first), first)) {
-            Some((Kind::Archive, archive)) => return self.import(archive.clone()),
-            Some((Kind::Index, index)) => self.insert_tape(tape::read_index(index)?, None),
-            _ if audio.is_empty() => return Err("Nothing to play there".into()),
-            _ => self.insert_tape(Tape { tracks: audio, ..Tape::default() }, None),
+            Some((Kind::Archive, archive)) => Ok(self.insert_tape(tape::read_archive(archive)?)),
+            Some((Kind::Index, index)) => Ok(self.insert_tape(tape::read_index(index)?)),
+            _ if audio.is_empty() => Err("Nothing to play there".into()),
+            _ => Ok(self.insert_tape((Tape { tracks: audio, ..Tape::default() }, Vec::new()))),
         }
-        Ok(json!({"job": false}))
     }
 
     pub fn export(&mut self, request: &Value) -> Result<Value, String> {
         let dest = PathBuf::from(request["dest"].as_str().ok_or("missing destination")?);
         let dest = if tape::kind(&dest) == Kind::Index { dest } else { dest.with_extension("tape") };
         let (tape, label) = (self.tape.clone(), format!("Saving {}", file_name(&dest)));
-        self.start(label, tape::export_size(&tape), move |done| {
-            tape::export(&tape, &dest, done).map(|()| Outcome::Exported(dest))
-        });
+        let briefs: Vec<Brief> = tape.tracks.iter().map(|track| self.brief(track)).collect();
+        let (done, total) = (Arc::new(AtomicU64::new(0)), tape::export_size(&tape));
+        let progress = done.clone();
+        let handle = std::thread::spawn(move || tape::export(&tape, &briefs, &dest, &progress).map(|()| dest));
+        self.job = Some(Job { label, total, done, handle });
         Ok(json!({"job": true}))
     }
 
-    fn finish(&mut self, outcome: Result<Outcome, String>) -> Value {
+    /// A tape saved over the archive it is played from has moved its tracks about inside it.
+    /// Find them again; the file that is playing stays open as it was until the track changes.
+    fn relocate(&mut self, dest: &Path) {
+        let inside = |source: &Source| source.span.as_ref().is_some_and(|span| span.archive == dest);
+        if !self.tape.tracks.iter().chain(self.tape.cover.iter()).any(inside) {
+            return;
+        }
+        match tape::read_archive(dest) {
+            Ok((saved, _)) if saved.tracks.len() == self.tape.tracks.len() => {
+                (self.tape.tracks, self.tape.cover) = (saved.tracks, saved.cover);
+            }
+            _ => {}
+        }
+    }
+
+    fn finish(&mut self, outcome: Result<PathBuf, String>) -> Value {
         match outcome {
-            Ok(Outcome::Imported(tape, scratch)) => {
-                self.insert_tape(tape, Some(scratch));
-                json!({"active": false, "loaded": true, "notice": ""})
-            }
-            Ok(Outcome::Exported(dest)) => {
+            Ok(dest) => {
                 self.dirty = false;
-                json!({"active": false, "loaded": false, "notice": format!("Saved {}", file_name(&dest))})
+                self.relocate(&dest);
+                json!({"active": false, "notice": format!("Saved {}", file_name(&dest))})
             }
-            Err(error) => json!({"active": false, "loaded": false, "notice": error}),
+            Err(error) => json!({"active": false, "notice": error}),
         }
     }
 
     /// Progress of the background job; the call that finds it finished also applies its result.
     pub fn poll(&mut self) -> Value {
         match self.job.take() {
-            None => json!({"active": false, "loaded": false, "notice": ""}),
+            None => json!({"active": false, "notice": ""}),
             Some(job) if job.handle.is_finished() => {
                 let outcome = job.handle.join().unwrap_or_else(|_| Err("The tape job failed".into()));
                 self.finish(outcome)
@@ -145,20 +142,38 @@ impl Session {
         }
     }
 
-    fn brief(&mut self, path: &Path) -> Value {
-        let (title, artist, seconds) =
-            self.briefs.entry(path.to_owned()).or_insert_with(|| insert::brief(path)).clone();
-        json!({"path": path, "file": file_name(path), "title": title, "artist": artist, "seconds": seconds})
+    /// What the listing says of a track, read from its tags the first time it is asked for.
+    fn brief(&mut self, track: &Source) -> Brief {
+        self.briefs.entry(track.path.clone()).or_insert_with(|| insert::brief(track)).clone()
+    }
+
+    fn row(&mut self, track: &Source) -> Value {
+        let Brief { title, artist, seconds } = self.brief(track);
+        json!({"path": track.path, "file": file_name(&track.path), "folder": track.file().parent(),
+            "title": title, "artist": artist, "seconds": seconds})
     }
 
     pub fn describe(&mut self) -> Value {
-        let tracks: Vec<Value> = self.tape.tracks.clone().iter().map(|track| self.brief(track)).collect();
+        let tracks: Vec<Value> = self.tape.tracks.clone().iter().map(|track| self.row(track)).collect();
         let seconds: u64 = tracks.iter().filter_map(|t| t["seconds"].as_u64()).sum();
         let written = [&self.tape.name, &self.tape.from, &self.tape.note].iter().any(|text| !text.is_empty());
         let mixtape = tracks.len() > 1 || written || self.tape.cover.is_some();
+        let cover = self.tape.cover.as_ref();
         json!({"name": self.tape.name, "from": self.tape.from, "note": self.tape.note,
-            "cover": self.tape.cover, "tracks": tracks, "index": self.index,
-            "seconds": seconds, "dirty": self.dirty, "mixtape": mixtape})
+            "cover": cover.map(|cover| &cover.path), "coverHeld": cover.is_some_and(|cover| cover.span.is_some()),
+            "tracks": tracks, "index": self.index, "seconds": seconds, "dirty": self.dirty, "mixtape": mixtape})
+    }
+
+    /// A cover held inside the tape cannot be shown from a path, so it is handed over whole. It
+    /// is read once, and asked for only when the cover changes.
+    pub fn held_cover(&mut self) -> Value {
+        let Some(cover) = self.tape.cover.as_ref().filter(|cover| cover.span.is_some()) else {
+            return json!({"url": ""});
+        };
+        if self.cover.as_ref().is_none_or(|(path, _)| *path != cover.path) {
+            self.cover = Some((cover.path.clone(), insert::held_cover(cover)));
+        }
+        json!({"url": self.cover.as_ref().map(|(_, url)| url)})
     }
 
     fn remove(&mut self, at: usize) -> Result<bool, String> {
@@ -189,7 +204,7 @@ impl Session {
         if tape::kind(&cover) != Kind::Image || !cover.is_file() {
             return Err("Drop an image to use as the cover".into());
         }
-        self.tape.cover = Some(cover);
+        self.tape.cover = Some(cover.into());
         Ok(false)
     }
 
@@ -213,7 +228,7 @@ impl Session {
             _ => return Err("unknown tape edit".into()),
         };
         self.dirty = true;
-        Ok(json!({"replaced": replaced, "path": self.current()}))
+        Ok(json!({"replaced": replaced, "path": self.current().map(|track| &track.path)}))
     }
 
     /// Whether `action` ("open" or "quit") may throw the tape away. Unsaved work is given up only
@@ -257,15 +272,7 @@ impl Session {
         reply
     }
 
-    pub fn track_path(&self, request: &Value) -> Option<&PathBuf> {
+    pub fn track_source(&self, request: &Value) -> Option<&Source> {
         request["index"].as_u64().map_or(self.current(), |index| self.tape.tracks.get(index as usize))
-    }
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        if let Some(scratch) = self.scratch.take() {
-            let _ = std::fs::remove_dir_all(scratch);
-        }
     }
 }

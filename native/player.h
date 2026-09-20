@@ -4,10 +4,30 @@
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QAudioBufferOutput>
+#include <QFile>
+#include <memory>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QTimer>
 #include <QUrl>
+
+// A track held inside a .tape: that stretch of the archive, read as though it were a file of
+// its own. A tape is an uncompressed tar, so the track's bytes lie there whole and in order.
+class Stretch : public QIODevice {
+public:
+    Stretch(const QString &archive, qint64 offset, qint64 length) : file(archive), start(offset), length(length) {}
+    bool open(OpenMode mode) override { return file.open(ReadOnly) && file.seek(start) && QIODevice::open(mode); }
+    void close() override { file.close(); QIODevice::close(); }
+    bool isSequential() const override { return false; }
+    qint64 size() const override { return length; }
+    bool seek(qint64 to) override { return to >= 0 && to <= length && QIODevice::seek(to) && file.seek(start + to); }
+protected:
+    qint64 readData(char *data, qint64 most) override { return file.read(data, qMin(most, start + length - file.pos())); }
+    qint64 writeData(const char *, qint64) override { return -1; }
+private:
+    QFile file;
+    qint64 start, length;
+};
 
 class Player : public QObject {
     Q_OBJECT
@@ -99,16 +119,20 @@ private:
     void poll();
     int trackCount() const { return reel["tracks"].toList().size(); }
     Core core;
+    // Declared before the player, so it outlives it: the player reads a held track through this.
+    std::unique_ptr<Stretch> held;
     QMediaPlayer media;
     QAudioOutput output;
     QAudioBufferOutput buffers;
     QVariantList samples, bands, needles;
     QString scene, deck = "stopped";
     QVariantMap card, reel;
+    QString coverPath;
+    QUrl coverUrl;
     QTimer poller;
     QString jobLabel;
     double fraction = -1;
-    bool repeat = false, lifted = false, skipBookmark = false;
+    bool repeat = false, lifted = false;
     QString path, size;
     qint64 mark = -1, pending = -1;
     bool startPaused = false, loading = false;

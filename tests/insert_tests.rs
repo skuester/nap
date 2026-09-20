@@ -6,6 +6,7 @@ use lofty::tag::items::Timestamp;
 use lofty::tag::{Accessor, TagExt};
 use nap::app::App;
 use nap::insert;
+use nap::tape::Source;
 use serde_json::{Value, json};
 use std::fs;
 
@@ -54,7 +55,7 @@ fn insert_prints_standard_custom_and_technical_fields() {
     );
     tag.save_to_path(&path, WriteOptions::default()).unwrap();
 
-    let card = insert::read(&path);
+    let card = insert::read(&Source::from(&path));
     assert_eq!(card["title"], "Roygbiv");
     assert_eq!(card["artist"], "Boards of Omarchy");
     assert_eq!(card["year"], "1998");
@@ -79,13 +80,13 @@ fn untagged_and_unreadable_files_still_get_a_file_panel() {
     let temp = tempfile::tempdir().unwrap();
     let plain = temp.path().join("plain.wav");
     fs::write(&plain, wav()).unwrap();
-    let card = insert::read(&plain);
+    let card = insert::read(&Source::from(&plain));
     assert_eq!(card["title"], "");
     assert_eq!(card["tags"], json!([]));
     assert_eq!(row(&card["file"], "Length"), Some("0:01"));
     let junk = temp.path().join("junk.mp3");
     fs::write(&junk, "not audio").unwrap();
-    assert_eq!(row(&insert::read(&junk)["file"], "Size"), Some("9 B"));
+    assert_eq!(row(&insert::read(&Source::from(&junk))["file"], "Size"), Some("9 B"));
 }
 
 #[test]
@@ -117,7 +118,7 @@ fn custom_fields_survive_in_every_tag_format() {
         tag.set_title("Quiet".into());
         tag.push("TAPE_MOOD".into(), "sleepy".into());
         tag.save_to_path(&path, options()).unwrap();
-        let card = insert::read(&path);
+        let card = insert::read(&Source::from(&path));
         assert_eq!(row(&card["tags"], "Tape mood"), Some("sleepy"), "{name}");
         assert_eq!(row(&card["file"], "Tagged with"), Some("Vorbis comments"), "{name}");
     }
@@ -126,7 +127,7 @@ fn custom_fields_survive_in_every_tag_format() {
         let mut tag = Id3v2Tag::new();
         tag.insert(Frame::UserText(ExtendedTextFrame::new(TextEncoding::UTF8, "TAPE_MOOD", "sleepy")));
         tag.save_to_path(&path, options()).unwrap();
-        assert_eq!(row(&insert::read(&path)["tags"], "Tape mood"), Some("sleepy"), "{name}");
+        assert_eq!(row(&insert::read(&Source::from(&path))["tags"], "Tape mood"), Some("sleepy"), "{name}");
     }
     let path = fixture(&temp, "silence.m4a");
     let mut tag = Ilst::default();
@@ -135,7 +136,7 @@ fn custom_fields_survive_in_every_tag_format() {
     tag.insert(Atom::new(freeform("TAPE_COUNT"), AtomData::UnsignedInteger(42)));
     tag.insert(Atom::new(freeform("TAPE_FLAG"), AtomData::Bool(true)));
     tag.save_to_path(&path, options()).unwrap();
-    let card = insert::read(&path);
+    let card = insert::read(&Source::from(&path));
     assert_eq!(row(&card["tags"], "Tape mood"), Some("sleepy"));
     assert_eq!(row(&card["tags"], "Tape count"), Some("42"));
     // MP4 stores a flag as the integer 1.
@@ -148,7 +149,7 @@ fn custom_fields_survive_in_every_tag_format() {
         tag.insert(ApeItem::new("TapeMood".into(), ItemValue::Text("sleepy".into())).unwrap());
         tag.insert(ApeItem::new("TapeBlob".into(), ItemValue::Binary(vec![1, 2, 3])).unwrap());
         tag.save_to_path(&path, options()).unwrap();
-        let card = insert::read(&path);
+        let card = insert::read(&Source::from(&path));
         assert_eq!(row(&card["tags"], "Tape mood"), Some("sleepy"), "{name}");
         assert_eq!(row(&card["tags"], "Tape blob"), None, "{name}");
     }
@@ -166,7 +167,7 @@ fn numbered_tracks_years_and_pictures_read_naturally() {
     tag.insert_text(ItemKey::RecordingDate, "1998-04-20".into());
     tag.push_picture(Picture::unchecked(vec![9; 8]).pic_type(PictureType::Other).mime_type(MimeType::Jpeg).build());
     tag.save_to_path(&path, WriteOptions::default()).unwrap();
-    let card = insert::read(&path);
+    let card = insert::read(&Source::from(&path));
     assert_eq!(row(&card["tags"], "Track number"), Some("7 of 18"));
     assert_eq!(row(&card["tags"], "Disc number"), Some("2"));
     assert_eq!(row(&card["tags"], "Track total"), None);

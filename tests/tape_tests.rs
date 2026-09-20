@@ -1,7 +1,8 @@
 use nap::app::App;
-use nap::tape::{self, Kind, Tape};
+use nap::tape::{self, Brief, Kind, Source, Tape};
 use serde_json::{Value, json};
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -22,17 +23,29 @@ fn entries(archive: &Path) -> Vec<String> {
     tar.entries().unwrap().map(|e| e.unwrap().path().unwrap().to_string_lossy().into_owned()).collect()
 }
 
+fn paths(tracks: &[Source]) -> Vec<PathBuf> {
+    tracks.iter().map(|track| track.path.clone()).collect()
+}
+
+fn bytes(source: &Source) -> Vec<u8> {
+    let mut data = Vec::new();
+    source.open().unwrap().read_to_end(&mut data).unwrap();
+    data
+}
+
 #[test]
 fn the_index_is_plain_m3u_text() {
-    let text = "#EXTM3U\n#PLAYLIST: Summer '98 \n#EXTIMG:_cover.jpg\n# a note to self\n\n01 Roygbiv.flac\n  02 Don't Stop.mp3  \n/music/03 far away.ogg\n";
-    let tape = tape::parse(text, Path::new("/tapes/summer"));
-    assert_eq!(tape.name, "Summer '98");
-    assert_eq!(tape.cover, Some("/tapes/summer/_cover.jpg".into()));
+    let text = "\u{feff}#EXTM3U\r\n#PLAYLIST: Summer '98 \n#EXTIMG:cover.jpg\n# a note to self\n\n#EXTINF:151,Boards of Canada - Roygbiv\n01 Roygbiv.flac\n  02 Don't Stop.mp3  \n#EXTINF:-1,\n/music/03 far away.ogg\n";
+    let index = tape::parse(text, Path::new("/tapes/summer")).unwrap();
+    assert_eq!(index.tape.name, "Summer '98");
+    assert_eq!(index.tape.cover, Some("/tapes/summer/cover.jpg".into()));
     let tracks: Vec<PathBuf> =
         ["/tapes/summer/01 Roygbiv.flac", "/tapes/summer/02 Don't Stop.mp3", "/music/03 far away.ogg"]
             .map(Into::into)
             .into();
-    assert_eq!(tape.tracks, tracks);
+    assert_eq!(paths(&index.tape.tracks), tracks);
+    // A track that goes missing is named by its title where the index gives one.
+    assert_eq!(index.labels, ["Boards of Canada - Roygbiv", "02 Don't Stop.mp3", "03 far away.ogg"]);
 
     let signed = Tape {
         name: "Summer\n'98".into(),
@@ -40,14 +53,34 @@ fn the_index_is_plain_m3u_text() {
         note: "For the drive up.\n\nSide B is the good one.\n".into(),
         ..Tape::default()
     };
-    let written = tape::render(&signed, Some("_cover.jpg"), &["01 Roygbiv.flac".into(), "02 Don't Stop.mp3".into()]);
-    let expected = "#EXTM3U\n#PLAYLIST:Summer '98\n#EXTIMG:_cover.jpg\n#FROM:Shane\n#NOTE:For the drive up.\n#NOTE:\n#NOTE:Side B is the good one.\n\n01 Roygbiv.flac\n02 Don't Stop.mp3\n";
+    let briefs =
+        [Brief { title: "Roygbiv".into(), artist: "Boards of\nCanada".into(), seconds: 151 }, Brief::default()];
+    let entries = ["01 Roygbiv.flac".into(), "02 Don't Stop.mp3".into(), "bare.ogg".into()];
+    let written = tape::render(&signed, Some("cover.jpg"), &entries, &briefs);
+    let expected = "#EXTM3U\n#EXTENC:UTF-8\n#NAP:1\n#PLAYLIST:Summer '98\n#EXTIMG:cover.jpg\n#NAP-FROM:Shane\n#NAP-NOTE:For the drive up.\n#NAP-NOTE:\n#NAP-NOTE:Side B is the good one.\n\n#EXTINF:151,Boards of Canada - Roygbiv\n01 Roygbiv.flac\n#EXTINF:-1,02 Don't Stop\n02 Don't Stop.mp3\nbare.ogg\n";
     assert_eq!(written, expected);
-    assert_eq!(tape::render(&Tape { name: "  ".into(), ..Tape::default() }, None, &[]), "#EXTM3U\n\n");
-    let read = tape::parse(&written, Path::new("/t"));
+    let blank = tape::render(&Tape { name: "  ".into(), ..Tape::default() }, None, &[], &[]);
+    assert_eq!(blank, "#EXTM3U\n#EXTENC:UTF-8\n#NAP:1\n\n");
+    let read = tape::parse(&written, Path::new("/t")).unwrap().tape;
     let words = (read.name.as_str(), read.from.as_str(), read.note.as_str());
     assert_eq!(words, ("Summer '98", "Shane", "For the drive up.\n\nSide B is the good one."));
-    assert_eq!(read.tracks.len(), 2, "a signature and a note are not tracks");
+    assert_eq!(read.tracks.len(), 3, "a signature and a note are not tracks");
+}
+
+#[test]
+fn a_name_starting_with_a_hash_is_still_a_track() {
+    let written = tape::render(&Tape::default(), None, &["#1 Crush.mp3".into(), "plain.mp3".into()], &[]);
+    assert!(written.ends_with("\n./#1 Crush.mp3\nplain.mp3\n"), "{written}");
+    let read = tape::parse(&written, Path::new("/t")).unwrap();
+    assert_eq!(paths(&read.tape.tracks), [PathBuf::from("/t/#1 Crush.mp3"), "/t/plain.mp3".into()]);
+}
+
+#[test]
+fn a_tape_from_a_newer_nap_is_refused_rather_than_misread() {
+    assert!(tape::parse("#EXTM3U\n#NAP:1\na.mp3\n", Path::new("/t")).is_ok());
+    assert!(tape::parse("#EXTM3U\n#NAP:one\na.mp3\n", Path::new("/t")).is_ok(), "a garbled version is not a newer one");
+    let refused = tape::parse(&format!("#EXTM3U\n#NAP:{}\na.mp3\n", tape::VERSION + 1), Path::new("/t")).unwrap_err();
+    assert_eq!(refused, "This tape was made by a newer nap than this one");
 }
 
 #[test]
@@ -66,62 +99,100 @@ fn files_are_known_by_their_extensions() {
 
 #[test]
 fn archived_names_stay_distinct_and_repeats_share_one() {
-    let tracks: Vec<PathBuf> =
+    let tracks: Vec<Source> =
         ["/a/intro.mp3", "/b/intro.mp3", "/a/intro.mp3", "/c/intro.mp3", "/c/README"].map(Into::into).into();
     assert_eq!(tape::archive_names(&tracks), ["intro.mp3", "intro (2).mp3", "intro.mp3", "intro (3).mp3", "README"]);
 }
 
 #[test]
-fn a_tape_survives_export_and_extraction() {
+fn a_saved_tape_is_read_where_it_lies() {
     let temp = tempfile::tempdir().unwrap();
     let first = copy(temp.path(), "silence.flac", "one/intro.flac");
     let second = copy(temp.path(), "silence.mp3", "two/intro.flac");
+    let hashed = copy(temp.path(), "silence.ogg", "#1 Crush.ogg");
     let cover = temp.path().join("art.PNG");
     fs::write(&cover, b"\x89PNG stand-in").unwrap();
     let tape = Tape {
         name: "Summer '98".into(),
-        cover: Some(cover),
-        tracks: vec![first.clone(), second, first],
+        cover: Some(cover.into()),
+        tracks: vec![first.clone().into(), second.clone().into(), first.clone().into(), hashed.clone().into()],
         ..Tape::default()
     };
     let dest = temp.path().join("Summer.tape");
     let done = AtomicU64::new(0);
-    tape::export(&tape, &dest, &done).unwrap();
+    tape::export(&tape, &[], &dest, &done).unwrap();
     assert_eq!(done.load(Ordering::Relaxed), tape::export_size(&tape));
     assert!(!temp.path().join("Summer.tape.partial").exists());
     assert_eq!(
         entries(&dest),
-        ["Summer/_index.jcard", "Summer/_cover.png", "Summer/intro.flac", "Summer/intro (2).flac"]
+        ["Summer/tape.jcard", "Summer/cover.png", "Summer/intro.flac", "Summer/intro (2).flac", "Summer/#1 Crush.ogg"]
     );
+    // A tape is for handing on, so it does not say who owned its files.
+    let mut tar = tar::Archive::new(fs::File::open(&dest).unwrap());
+    for entry in tar.entries().unwrap() {
+        let header = entry.unwrap().header().clone();
+        assert_eq!((header.uid().unwrap(), header.gid().unwrap(), header.mode().unwrap()), (0, 0, 0o644));
+        assert!(header.mtime().unwrap() > 0 && header.username().unwrap().unwrap_or("").is_empty());
+    }
 
-    let into = tape::scratch(&temp.path().join("scratch"), &dest).unwrap();
-    let unpacked = AtomicU64::new(0);
-    let read = tape::extract(&dest, &into, &unpacked).unwrap();
-    assert!(unpacked.load(Ordering::Relaxed) > 0);
+    let (read, missing) = tape::read_archive(&dest).unwrap();
+    assert!(missing.is_empty());
     assert_eq!(read.name, "Summer '98");
-    assert_eq!(read.cover, Some(into.join("Summer/_cover.png")));
-    let names: Vec<String> =
-        read.tracks.iter().map(|t| t.strip_prefix(&into).unwrap().to_string_lossy().into_owned()).collect();
-    assert_eq!(names, ["Summer/intro.flac", "Summer/intro (2).flac", "Summer/intro.flac"]);
-    let index = fs::read_to_string(into.join("Summer/_index.jcard")).unwrap();
-    assert_eq!(index, "#EXTM3U\n#PLAYLIST:Summer '98\n#EXTIMG:_cover.png\n\nintro.flac\nintro (2).flac\nintro.flac\n");
-    // A second extraction of the same archive gets its own directory.
-    assert_ne!(tape::scratch(&temp.path().join("scratch"), &dest).unwrap(), into);
+    let names = ["Summer/intro.flac", "Summer/intro (2).flac", "Summer/intro.flac", "Summer/#1 Crush.ogg"];
+    assert_eq!(paths(&read.tracks), names.map(|name| dest.join(name)));
+    // Nothing is unpacked: each track is a stretch of the archive holding exactly the file's bytes.
+    for (track, original) in read.tracks.iter().zip([&first, &second, &first, &hashed]) {
+        assert_eq!(track.file(), dest);
+        assert_eq!(bytes(track), fs::read(original).unwrap());
+        assert_eq!(track.size(), fs::metadata(original).unwrap().len());
+    }
+    let cover = read.cover.clone().unwrap();
+    assert_eq!((cover.path.clone(), bytes(&cover)), (dest.join("Summer/cover.png"), b"\x89PNG stand-in".to_vec()));
+    let index = Source { path: dest.join("Summer/tape.jcard"), span: None };
+    assert!(!index.is_there(), "a held file's path names it without being on disk");
+    // Tags read through the window, by name and by content alike.
+    assert_eq!(nap::insert::read(&read.tracks[0])["file"][0][1], "FLAC");
+    assert_eq!(nap::insert::read(&read.tracks[1])["file"][0][1], "MPEG audio");
+    assert_eq!(nap::insert::read(&read.tracks[0])["file"].as_array().unwrap().last().unwrap()[1], json!(temp.path()));
+    assert!(nap::insert::held_cover(&cover).starts_with("data:image/png;base64,iVBORyBz"));
+
+    // The window seeks like a file of its own, and never reads past its end.
+    let mut window = read.tracks[3].open().unwrap();
+    let whole = fs::read(&hashed).unwrap();
+    let mut tail = Vec::new();
+    assert_eq!(window.seek(SeekFrom::End(-4)).unwrap(), whole.len() as u64 - 4);
+    window.read_to_end(&mut tail).unwrap();
+    assert_eq!(tail, whole[whole.len() - 4..]);
+    assert_eq!(window.seek(SeekFrom::Start(2)).unwrap(), 2);
+    assert_eq!(window.seek(SeekFrom::Current(3)).unwrap(), 5);
+    let mut four = [0; 4];
+    window.read_exact(&mut four).unwrap();
+    assert_eq!(four, whole[5..9]);
+    assert!(window.seek(SeekFrom::Current(-99)).is_err());
+    window.seek(SeekFrom::End(10)).unwrap();
+    assert_eq!(window.read(&mut four).unwrap(), 0);
+
+    // A J-card alone cannot list what is inside a tape.
+    let refused = tape::export(&read, &[], &temp.path().join("list.jcard"), &done).unwrap_err();
+    assert!(refused.starts_with("A J-card lists files where they are"), "{refused}");
 }
 
 #[test]
 fn a_standalone_jcard_points_at_files_where_they_are() {
     let temp = tempfile::tempdir().unwrap();
     let track = copy(temp.path(), "silence.ogg", "music/far away.ogg");
-    let tape = Tape { tracks: vec![track.clone()], ..Tape::default() };
+    let tape = Tape { tracks: vec![track.clone().into()], ..Tape::default() };
     let dest = temp.path().join("mix.jcard");
-    tape::export(&tape, &dest, &AtomicU64::new(0)).unwrap();
-    assert_eq!(fs::read_to_string(&dest).unwrap(), format!("#EXTM3U\n\n{}\n", track.display()));
-    assert_eq!(tape::read_index(&dest).unwrap().tracks, [track]);
+    tape::export(&tape, &[], &dest, &AtomicU64::new(0)).unwrap();
+    assert_eq!(fs::read_to_string(&dest).unwrap(), format!("#EXTM3U\n#EXTENC:UTF-8\n#NAP:1\n\n{}\n", track.display()));
+    assert_eq!(paths(&tape::read_index(&dest).unwrap().0.tracks), [track]);
 
-    fs::write(&dest, "#EXTM3U\n#PLAYLIST:Ghosts\n#EXTIMG:gone.png\nmissing.mp3\nmusic/far away.ogg\n").unwrap();
-    let read = tape::read_index(&dest).unwrap();
+    let listing =
+        "#EXTM3U\n#PLAYLIST:Ghosts\n#EXTIMG:gone.png\n#EXTINF:9,Casper - Boo\nmissing.mp3\nmusic/far away.ogg\n";
+    fs::write(&dest, listing).unwrap();
+    let (read, missing) = tape::read_index(&dest).unwrap();
     assert_eq!((read.name.as_str(), read.cover, read.tracks.len()), ("Ghosts", None, 1));
+    assert_eq!(missing, ["Casper - Boo"]);
     fs::write(&dest, "#EXTM3U\nmissing.mp3\n").unwrap();
     assert_eq!(tape::read_index(&dest).unwrap_err(), "None of this J-card's tracks could be found");
     fs::write(&dest, "#EXTM3U\n").unwrap();
@@ -132,11 +203,11 @@ fn a_standalone_jcard_points_at_files_where_they_are() {
 #[test]
 fn a_failed_export_leaves_nothing_behind() {
     let temp = tempfile::tempdir().unwrap();
-    let tape = Tape { name: "Lost".into(), tracks: vec![temp.path().join("missing.flac")], ..Tape::default() };
+    let tape = Tape { name: "Lost".into(), tracks: vec![temp.path().join("missing.flac").into()], ..Tape::default() };
     let dest = temp.path().join("Lost.tape");
-    assert!(tape::export(&tape, &dest, &AtomicU64::new(0)).unwrap_err().contains("missing.flac"));
+    assert!(tape::export(&tape, &[], &dest, &AtomicU64::new(0)).unwrap_err().contains("missing.flac"));
     assert!(!dest.exists() && !temp.path().join("Lost.tape.partial").exists());
-    assert!(tape::export(&tape, &temp.path().join("no/such/dir/Lost.tape"), &AtomicU64::new(0)).is_err());
+    assert!(tape::export(&tape, &[], &temp.path().join("no/such/dir/Lost.tape"), &AtomicU64::new(0)).is_err());
 }
 
 #[test]
@@ -145,29 +216,51 @@ fn archives_without_an_index_or_with_odd_entries_are_handled() {
     let archive = temp.path().join("Loose.tape");
     let mut tar = tar::Builder::new(fs::File::create(&archive).unwrap());
     tar.append_path_with_name(fixture("silence.ogg"), "b side.ogg").unwrap();
-    tar.append_path_with_name(fixture("silence.mp3"), "deep/a side.mp3").unwrap();
-    tar.append_path_with_name(fixture("silence.mp3"), "too/deep/down/lost.mp3").unwrap();
+    tar.append_path_with_name(fixture("silence.mp3"), "./deep/down/a side.mp3").unwrap();
+    tar.append_path_with_name(fixture("silence.mp3"), "notes.txt").unwrap();
     let mut link = tar::Header::new_gnu();
     link.set_entry_type(tar::EntryType::Symlink);
     link.set_size(0);
     tar.append_link(&mut link, "escape.mp3", "/etc/passwd").unwrap();
     tar.finish().unwrap();
     drop(tar);
-    let into = temp.path().join("out");
-    let read = tape::extract(&archive, &into, &AtomicU64::new(0)).unwrap();
+    let (read, _) = tape::read_archive(&archive).unwrap();
     assert_eq!(read.name, "Loose");
-    assert_eq!(read.tracks, [into.join("b side.ogg"), into.join("deep/a side.mp3")]);
-    assert!(fs::symlink_metadata(into.join("escape.mp3")).is_err());
+    assert_eq!(paths(&read.tracks), [archive.join("b side.ogg"), archive.join("deep/down/a side.mp3")]);
 
     let empty = temp.path().join("Empty.tape");
     tar::Builder::new(fs::File::create(&empty).unwrap()).finish().unwrap();
-    assert_eq!(
-        tape::extract(&empty, &temp.path().join("nothing"), &AtomicU64::new(0)).unwrap_err(),
-        "This tape has no playable tracks"
+    assert_eq!(tape::read_archive(&empty).unwrap_err(), "This tape has no playable tracks");
+    assert!(tape::read_archive(&temp.path().join("absent.tape")).is_err());
+    // Anything else that happens to be called .tape, such as a terminal recorder's script.
+    fs::write(&empty, "Output demo.gif\nType \"echo hello\"\nEnter\n".repeat(40)).unwrap();
+    assert!(tape::read_archive(&empty).unwrap_err().contains("not a tape nap can read"));
+    // A tape that lost its end on the way here says so, rather than playing into nothing.
+    let whole = fs::read(&archive).unwrap();
+    fs::write(&empty, &whole[..700]).unwrap();
+    assert!(tape::read_archive(&empty).unwrap_err().ends_with("this tape is cut short"));
+}
+
+#[test]
+fn an_index_inside_a_tape_can_list_only_what_the_tape_holds() {
+    let temp = tempfile::tempdir().unwrap();
+    let outside = copy(temp.path(), "silence.flac", "private.flac");
+    let archive = temp.path().join("Nosy.tape");
+    let listing = format!(
+        "#EXTM3U\n#PLAYLIST:Nosy\n#EXTIMG:{0}\n{0}\n../private.flac\n../../../../etc/passwd\n#EXTINF:1,Gone - Away\ngone.mp3\n./mine.ogg\n",
+        outside.display()
     );
-    assert!(tape::extract(&temp.path().join("absent.tape"), &into, &AtomicU64::new(0)).is_err());
-    fs::write(&empty, "not a tar at all, just some text that is long enough to look like a header maybe").unwrap();
-    assert!(tape::extract(&empty, &temp.path().join("garbled"), &AtomicU64::new(0)).is_err());
+    fs::create_dir(temp.path().join("Nosy")).unwrap();
+    fs::write(temp.path().join("Nosy/tape.jcard"), listing).unwrap();
+    let mut tar = tar::Builder::new(fs::File::create(&archive).unwrap());
+    tar.append_path_with_name(temp.path().join("Nosy/tape.jcard"), "Nosy/tape.jcard").unwrap();
+    tar.append_path_with_name(fixture("silence.ogg"), "Nosy/mine.ogg").unwrap();
+    tar.finish().unwrap();
+    drop(tar);
+    let (read, missing) = tape::read_archive(&archive).unwrap();
+    assert_eq!(paths(&read.tracks), [archive.join("Nosy/mine.ogg")]);
+    assert_eq!(read.cover, None);
+    assert_eq!(missing, ["private.flac", "private.flac", "passwd", "Gone - Away"]);
 }
 
 fn ask(app: &mut App, request: Value) -> Value {
@@ -203,7 +296,7 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
     assert!(app.dispatch(&json!({"op":"load", "paths": [temp.path().join("art.png")]})).is_err());
 
     // A lone file is a tape of one, and not yet a mixtape.
-    assert_eq!(ask(&mut app, json!({"op":"load", "paths": [a]}))["job"], false);
+    assert_eq!(ask(&mut app, json!({"op":"load", "paths": [a]}))["notice"], "");
     let tape = ask(&mut app, json!({"op":"tape"}));
     assert_eq!((files(&tape), &tape["mixtape"], &tape["dirty"]), (vec!["a.flac"], &json!(false), &json!(false)));
     assert!(app.dispatch(&json!({"op":"edit", "action":"remove", "index": 0})).is_err());
@@ -254,45 +347,77 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
 
     assert!(app.dispatch(&json!({"op":"export"})).is_err());
     assert_eq!(ask(&mut app, json!({"op":"export", "dest": temp.path().join("Summer")}))["job"], true);
-    assert_eq!(finish(&mut app), json!({"active": false, "loaded": false, "notice": "Saved Summer.tape"}));
+    assert_eq!(finish(&mut app), json!({"active": false, "notice": "Saved Summer.tape"}));
     assert_eq!(ask(&mut app, json!({"op":"tape"}))["dirty"], false);
     assert_eq!(
         entries(&temp.path().join("Summer.tape")),
-        ["Summer/_index.jcard", "Summer/_cover.png", "Summer/c.ogg", "Summer/b.mp3"]
+        ["Summer/tape.jcard", "Summer/cover.png", "Summer/c.ogg", "Summer/b.mp3"]
     );
 
-    // Reloading the archive unpacks it to scratch space that goes away with the deck.
-    assert_eq!(ask(&mut app, json!({"op":"load", "paths": [temp.path().join("Summer.tape")]}))["job"], true);
-    assert_eq!(finish(&mut app)["loaded"], true);
+    let saved = temp.path().join("Summer.tape");
+    let index = Source {
+        path: saved.join("Summer/tape.jcard"),
+        span: tape::read_archive(&saved).unwrap().0.tracks[0].span.clone(),
+    };
+    assert!(index.span.is_some());
+    let written = fs::read(&saved).unwrap();
+    let listing = String::from_utf8_lossy(&written[512..1024]).into_owned();
+    assert!(listing.contains("#EXTINF:-1,c\nc.ogg\n#EXTINF:-1,b\nb.mp3\n"), "{listing}");
+
+    // Reloading the archive plays it from where it is: in the deck at once, nothing unpacked.
+    assert_eq!(ask(&mut app, json!({"op":"load", "paths": [saved]}))["notice"], "");
     let tape = ask(&mut app, json!({"op":"tape"}));
     assert_eq!((tape["name"].as_str(), files(&tape)), (Some("Summer '98"), vec!["c.ogg", "b.mp3"]));
     let words = (tape["from"].as_str(), tape["note"].as_str());
     assert_eq!(words, (Some("Shane"), Some("For the drive up.\nSide B is the good one.")));
-    let scratch =
-        PathBuf::from(tape["tracks"][0]["path"].as_str().unwrap()).parent().unwrap().parent().unwrap().to_owned();
-    assert!(scratch.starts_with(tape::scratch_root()) && scratch.is_dir());
+    assert_eq!((&tape["cover"], &tape["coverHeld"]), (&json!(saved.join("Summer/cover.png")), &json!(true)));
+    assert_eq!(ask(&mut app, json!({"op":"cover"}))["url"], "data:image/png;base64,c3RhbmQtaW4=");
+    let track = &tape["tracks"][1];
+    assert_eq!((&track["path"], &track["folder"]), (&json!(saved.join("Summer/b.mp3")), &json!(temp.path())));
+    // Opening a held track says which stretch of the archive to play; it has nowhere to keep a bookmark.
+    let opened = ask(&mut app, json!({"op":"open", "path": track["path"]}));
+    assert_eq!(
+        (&opened["path"], &opened["mark"], &opened["held"]["archive"]),
+        (&track["path"], &json!(-1), &json!(saved))
+    );
+    let (offset, length) = (opened["held"]["offset"].as_u64().unwrap(), opened["held"]["length"].as_u64().unwrap());
+    assert_eq!(
+        fs::read(&saved).unwrap()[offset as usize..][..length as usize],
+        fs::read(temp.path().join("b.mp3")).unwrap()
+    );
+    assert!(app.dispatch(&json!({"op":"bookmark", "position": 5})).unwrap_err().contains("inside a tape"));
+    assert_eq!(ask(&mut app, json!({"op":"insert", "index": 1}))["file"][0][1], "MPEG audio");
     ask(&mut app, json!({"op":"export", "dest": temp.path().join("list.jcard")}));
-    assert_eq!(finish(&mut app)["notice"], "Saved list.jcard");
-    ask(&mut app, json!({"op":"load", "paths": [temp.path().join("list.jcard")]}));
-    assert!(!scratch.exists(), "a replaced tape's scratch space is removed");
-    ask(&mut app, json!({"op":"load", "paths": [temp.path().join("Summer.tape")]}));
-    finish(&mut app);
-    let scratch = PathBuf::from(ask(&mut app, json!({"op":"tape"}))["tracks"][0]["path"].as_str().unwrap())
-        .parent()
-        .unwrap()
-        .to_owned();
-    drop(app);
-    assert!(!scratch.exists(), "quitting removes scratch space");
+    assert!(finish(&mut app)["notice"].as_str().unwrap().starts_with("A J-card lists files where they are"));
 
-    let mut app = App::default();
-    ask(&mut app, json!({"op":"load", "paths": [temp.path().join("absent.tape")]}));
-    assert!(finish(&mut app)["notice"].as_str().unwrap().contains("absent.tape"));
-    let mine = format!("{}-absent-", std::process::id());
-    let leftovers = fs::read_dir(tape::scratch_root())
-        .unwrap()
-        .flatten()
-        .filter(|e| e.file_name().to_string_lossy().starts_with(&mine));
-    assert_eq!(leftovers.count(), 0, "a failed import removes its scratch space");
+    // Saved over the archive it is playing from, the tape finds its tracks again where they now lie.
+    ask(&mut app, json!({"op":"edit", "action":"move", "from": 1, "to": 0}));
+    ask(&mut app, json!({"op":"export", "dest": saved}));
+    assert_eq!(finish(&mut app)["notice"], "Saved Summer.tape");
+    let reopened = ask(&mut app, json!({"op":"open", "path": track["path"]}));
+    assert_ne!(reopened["held"]["offset"], opened["held"]["offset"]);
+    let (offset, length) = (reopened["held"]["offset"].as_u64().unwrap(), reopened["held"]["length"].as_u64().unwrap());
+    assert_eq!(
+        fs::read(&saved).unwrap()[offset as usize..][..length as usize],
+        fs::read(temp.path().join("b.mp3")).unwrap()
+    );
+    assert_eq!(files(&ask(&mut app, json!({"op":"tape"}))), ["b.mp3", "c.ogg"]);
+    // A cover of the tape's own again, no longer held.
+    ask(&mut app, json!({"op":"edit", "action":"cover", "path": temp.path().join("art.png")}));
+    assert_eq!(ask(&mut app, json!({"op":"cover"}))["url"], "");
+
+    // A listing whose files have wandered off says which.
+    fs::write(temp.path().join("list.jcard"), "#EXTM3U\n#EXTINF:3,Gone - Away\ngone.mp3\nlost.mp3\na.flac\n").unwrap();
+    let loaded = ask(&mut app, json!({"op":"load", "paths": [temp.path().join("list.jcard")]}));
+    assert_eq!(loaded["notice"], "Could not find 2 of this tape's tracks: Gone - Away, lost.mp3");
+    fs::write(temp.path().join("list.jcard"), "#EXTM3U\ngone.mp3\na.flac\n").unwrap();
+    let loaded = ask(&mut app, json!({"op":"load", "paths": [temp.path().join("list.jcard")]}));
+    assert_eq!(loaded["notice"], "Could not find gone.mp3");
+    assert!(
+        app.dispatch(&json!({"op":"load", "paths": [temp.path().join("absent.tape")]}))
+            .unwrap_err()
+            .contains("absent.tape")
+    );
 }
 
 #[test]

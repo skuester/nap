@@ -2,11 +2,12 @@
 use crate::{
     bookmark, insert, preference,
     session::Session,
+    tape::Source,
     theme::Theme,
     transport::{Deck, Event},
 };
 use serde_json::{Value, json};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn seek(position: i64, duration: i64) -> i64 {
     position.clamp(0, duration.max(0))
@@ -38,7 +39,8 @@ pub fn start_position(explicit: i64, mark: i64, ignore: bool) -> i64 {
 
 #[derive(Default)]
 pub struct App {
-    path: Option<PathBuf>,
+    /// What is under the head.
+    source: Option<Source>,
     session: Session,
 }
 fn number(request: &Value, key: &str) -> i64 {
@@ -49,25 +51,43 @@ fn flag(request: &Value, key: &str) -> bool {
 }
 
 impl App {
-    fn open(&mut self, request: &Value) -> Result<Value, String> {
-        let file = PathBuf::from(request["path"].as_str().ok_or("missing path")?);
+    /// A file of its own, checked and found by its real name.
+    fn file(file: &Path) -> Result<Source, String> {
         let path = file.canonicalize().map_err(|e| format!("Cannot open {}: {e}", file.display()))?;
         if !path.is_file() {
             return Err("Cannot open: not a regular file".into());
         }
-        let size =
-            std::fs::File::open(&path).and_then(|f| f.metadata()).map_err(|e| format!("Cannot open: {e}"))?.len();
-        let mark = bookmark::read(&path).ok().flatten().and_then(|v| i64::try_from(v).ok()).unwrap_or(-1);
+        std::fs::File::open(&path).map_err(|e| format!("Cannot open: {e}"))?;
+        Ok(path.into())
+    }
+
+    /// Put a track under the head. One held inside a tape is opened where it lies: the reply
+    /// says which stretch of which archive to play.
+    fn open(&mut self, request: &Value) -> Result<Value, String> {
+        let asked = PathBuf::from(request["path"].as_str().ok_or("missing path")?);
+        let held = self.session.listed(&asked).filter(|track| track.span.is_some()).cloned();
+        let source = held.map_or_else(|| Self::file(&asked), Ok)?;
+        // A bookmark is kept on the file itself, and a track inside a tape has no file of its own.
+        let kept = if source.span.is_none() { bookmark::read(&source.path).ok().flatten() } else { None };
+        let mark = kept.and_then(|v| i64::try_from(v).ok()).unwrap_or(-1);
         let start = request["start"].as_i64().unwrap_or(-1);
         let ignore = flag(request, "ignore");
         let resumed = start < 0 && !ignore && mark >= 0;
-        self.path = Some(path.clone());
-        Ok(json!({"path": path, "mark": mark, "pending": start_position(start, mark, ignore), "size": file_size(size),
-            "notice": if resumed { "Opened at your bookmark" } else { "" }}))
+        let mut reply = json!({"path": source.path, "mark": mark, "pending": start_position(start, mark, ignore),
+            "size": file_size(source.size()), "notice": if resumed { "Opened at your bookmark" } else { "" }});
+        if let Some(span) = &source.span {
+            reply["held"] = json!({"archive": span.archive, "offset": span.offset, "length": span.length});
+        }
+        self.source = Some(source);
+        Ok(reply)
     }
 
     fn bookmark(&self, request: &Value) -> Result<Value, String> {
-        let path = self.path.as_ref().ok_or("No file loaded")?;
+        let source = self.source.as_ref().ok_or("No file loaded")?;
+        if source.span.is_some() {
+            return Err("a track inside a tape has no file of its own to keep one on".into());
+        }
+        let path = &source.path;
         let position = number(request, "position").max(0);
         if flag(request, "remove") {
             bookmark::clear(path)?;
@@ -92,8 +112,8 @@ impl App {
     }
 
     fn insert(&self, request: &Value) -> Result<Value, String> {
-        let path = self.session.track_path(request).or(self.path.as_ref()).ok_or("No file loaded")?;
-        Ok(insert::read(path))
+        let source = self.session.track_source(request).or(self.source.as_ref()).ok_or("No file loaded")?;
+        Ok(insert::read(source))
     }
 
     /// Requests about the tape in the deck rather than the file under the head.
@@ -102,6 +122,7 @@ impl App {
         Some(match op {
             "load" => session.load(request),
             "tape" => Ok(session.describe()),
+            "cover" => Ok(session.held_cover()),
             "edit" => session.edit(request),
             "export" => session.export(request),
             "job" => Ok(session.poll()),

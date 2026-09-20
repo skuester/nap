@@ -9,6 +9,12 @@
          say) would beat our own in hicolor. Naming ours as the generic leaves nothing to outrank it. -->
     <generic-icon name="application-x-nap-tape"/>
     <glob pattern="*.tape"/>
+    <!-- nap writes the index first, so a tape's first entry is "<its folder>/tape.jcard": that
+         name is in the first tar header, or after one long-name header if the folder's name is
+         very long. This is what tells a tape from any other tar, whatever the file is called. -->
+    <magic priority="80">
+      <match type="string" value="/tape.jcard" offset="0:612"/>
+    </magic>
   </mime-type>
   <mime-type type="application/x-nap-jcard">
     <comment>nap J-card track listing</comment>
