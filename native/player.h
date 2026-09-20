@@ -73,7 +73,8 @@ public:
     QVariantMap tape() const { return reel; }
     double progress() const { return fraction; }
     QString progressLabel() const { return jobLabel; }
-    void load(const QStringList &paths, bool paused = false, qint64 start = -1, bool ignore = false);
+    // `track` counts from one and picks where a tape starts; 0 leaves that to its bookmark.
+    void load(const QStringList &paths, bool paused = false, qint64 start = -1, bool ignore = false, int track = 0);
     void openFile(const QString &path, bool paused = false, qint64 start = -1, bool ignore = false, bool lifted = false);
     Q_INVOKABLE void openUrl(const QUrl &url);
     Q_INVOKABLE void openUrls(const QList<QUrl> &urls, bool append = false);

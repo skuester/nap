@@ -35,7 +35,14 @@ fn cli_aliases_and_literal_files() {
     let Action::Run(o) = parse(&["a.flac", "b.mp3", "--loop", "c.ogg"]).unwrap() else { panic!() };
     assert_eq!(o.paths.iter().map(|p| p.to_str().unwrap()).collect::<Vec<_>>(), ["a.flac", "b.mp3", "c.ogg"]);
     let Action::Run(o) = parse(&["mix.tape"]).unwrap() else { panic!() };
-    assert_eq!(o.paths.len(), 1);
+    assert_eq!((o.paths.len(), o.track), (1, 0));
+    // A tape can be started at a track, counted from one, and with --time that far into it.
+    let Action::Run(o) = parse(&["--track", "3", "--time=1:30", "mix.tape"]).unwrap() else { panic!() };
+    assert_eq!((o.track, o.start), (3, 90000));
+    for number in ["0", "-1", "two", "1.5", ""] {
+        assert_eq!(parse(&["--track", number, "mix.tape"]).unwrap_err(), "invalid track number", "{number}");
+    }
+    assert!(parse(&["mix.tape", "--track"]).is_err());
     assert!(matches!(parse(&["--install-hyprland", "--link", "hypr/nap.lua"]).unwrap(), Action::Install(Some(_))));
     for args in [
         &["--time"][..],

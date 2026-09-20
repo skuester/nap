@@ -127,15 +127,17 @@ bool Player::mayDiscard(const char *action) {
     if (!verdict["allowed"].toBool()) emit notice(verdict["notice"].toString());
     return verdict["allowed"].toBool();
 }
-void Player::load(const QStringList &paths, bool paused, qint64 start, bool ignore) {
+void Player::load(const QStringList &paths, bool paused, qint64 start, bool ignore, int track) {
     if (!mayDiscard("open")) return;
-    const auto result = core.request({{"op", "load"}, {"paths", QJsonArray::fromStringList(paths)}, {"start", start}, {"ignore", ignore}});
+    const auto result = core.request({{"op", "load"}, {"paths", QJsonArray::fromStringList(paths)}, {"start", start}, {"ignore", ignore}, {"track", track}});
     if (result.contains("error")) { emit notice(result["error"].toString()); return; }
     refreshTape();
-    // A tape with a bookmark comes up where it was left: on that track, that far in.
-    const auto resume = result["resume"].toObject();
-    if (resume.isEmpty()) openFile(reel["tracks"].toList().value(0).toMap()["path"].toString(), paused, start, ignore || trackCount() > 1);
-    else { openFile(resume["path"].toString(), paused, resume["position"].toInteger(), true); emit notice("Opened at your bookmark"); }
+    // The core says which track comes up: the first, the one asked for, or with a bookmark and
+    // nothing asked, where the tape was left. A tape's tracks never start at their files' own marks.
+    const auto cue = result["cue"].toObject();
+    const bool resumed = cue["resumed"].toBool();
+    openFile(cue["path"].toString(), paused, resumed ? cue["position"].toInteger() : start, resumed || ignore || trackCount() > 1);
+    if (resumed) emit notice("Opened at your bookmark");
     if (!result["notice"].toString().isEmpty()) emit notice(result["notice"].toString());
 }
 void Player::refreshTape() {
@@ -147,6 +149,8 @@ void Player::refreshTape() {
         coverUrl = cover.isEmpty() ? QUrl() : reel["coverHeld"].toBool() ? QUrl(core.request({{"op", "cover"}})["url"].toString()) : QUrl::fromLocalFile(cover);
     }
     reel["coverUrl"] = coverUrl;
+    // A tape's bookmark is a track number and a time, so which track shows it is the core's to say.
+    if (reel["keepsMark"].toBool()) { mark = reel["mark"].toLongLong(); emit changed(); }
     media.setLoops(repeat && trackCount() < 2 ? QMediaPlayer::Infinite : 1);
     emit tapeChanged();
 }

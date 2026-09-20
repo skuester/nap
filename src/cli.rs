@@ -11,7 +11,10 @@ usage: nap [options] [audio... | mix.tape | mix.jcard]
   several audio files open as one tape, in the order given
 
   --paused                  open paused
-  --time, --start, --timestamp T  seconds, m:ss, h:mm:ss; overrides bookmark
+  --time, --start, --timestamp T  seconds, m:ss, h:mm:ss; overrides bookmark.
+                            On a tape, a time in its first track unless --track says which
+  --track N                 start a tape at its Nth track; overrides bookmark.
+                            A single file has only the one, so there it is ignored
   --ignore-bookmark         start at the beginning
   --volume N                initial volume, 0–100 (default 75)
   --loop                    repeat the file, or the whole tape
@@ -33,6 +36,8 @@ pub struct Options {
     pub paths: Vec<PathBuf>,
     pub paused: bool,
     pub start: i64,
+    /// The track of a tape to start at, counted from one; 0 when none was asked for.
+    pub track: u32,
     pub ignore: bool,
     pub volume: f64,
     pub looping: bool,
@@ -44,6 +49,7 @@ impl Default for Options {
             paths: Vec::new(),
             paused: false,
             start: -1,
+            track: 0,
             ignore: false,
             volume: 0.75,
             looping: false,
@@ -98,8 +104,8 @@ fn immediate(key: &str) -> Option<Action> {
     }
 }
 
-const VALUED: [&str; 7] =
-    ["--time", "--start", "--timestamp", "--volume", "--screenshot", "--link", "--install-desktop"];
+const VALUED: [&str; 8] =
+    ["--time", "--start", "--timestamp", "--track", "--volume", "--screenshot", "--link", "--install-desktop"];
 
 #[derive(Default)]
 struct Parser {
@@ -140,6 +146,9 @@ impl Parser {
         let text = value.to_str().unwrap_or("");
         match key {
             "--volume" => self.options.volume = volume(text)?,
+            "--track" => {
+                self.options.track = text.parse().ok().filter(|track| *track > 0).ok_or("invalid track number")?
+            }
             "--screenshot" => self.options.screenshot = Some(value.into()),
             "--link" => self.link = Some(value.into()),
             "--install-desktop" => return Ok(Some(Action::DesktopInstall(value.into()))),

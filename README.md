@@ -31,6 +31,7 @@ make
 ./target/release/nap side-a/*.flac            # several files line up as one tape
 ./target/release/nap "Summer '98.tape"         # or a saved mixtape, or its .jcard
 ./target/release/nap --paused --time 1:02.5 song.mp3
+./target/release/nap --track 4 --time 0:30 "Summer '98.tape"   # thirty seconds into its fourth track
 ./target/release/nap --volume 40 --loop song.ogg
 ./target/release/nap --ignore-bookmark song.wav
 make test
@@ -38,7 +39,9 @@ make test
 
 `--time` also accepts `--start` and `--timestamp`; values can be seconds,
 `m:ss`, or `h:mm:ss`, including fractional seconds. Explicit timestamps take
-precedence over bookmarks. `--help` lists all options. Use `--` before a filename
+precedence over bookmarks. On a tape a time is a time in its first track unless `--track` names
+another, counted from one; `--track` alone starts at that track's top, and on a single file, which
+has only the one, it is ignored. `--help` lists all options. Use `--` before a filename
 that begins with a dash.
 
 ```sh
@@ -146,11 +149,12 @@ one explicit bookmark per file, and quitting does not overwrite it.
 A tape has one bookmark too, for the whole tape: which track, and how far into it. It is kept the
 same way, on the `.tape` (or `.jcard`) itself and never on the files it lists, as `3:62500` for
 62.5 seconds into the third track. Open the tape again and it comes up where you left it, one side
-or two; `--ignore-bookmark` and `--time` start it at the top instead. The diamond shows on the
+or two; `--ignore-bookmark`, `--time`, and `--track` start it where they say instead. The diamond shows on the
 label's ruled line while the marked track is up and beside that track in the insert's listing, the
-MARK lamp is lit while the tape has a mark anywhere, and Enter goes to it from any track. The mark
-follows its track through edits; while a tape has unsaved changes it waits, and is put on the file
-when the tape is saved. Files lined up but not yet saved as a tape have nowhere to keep one. Being
+MARK lamp is lit while the tape has a mark anywhere, and Enter goes to it from any track. The mark is
+a track number and a time and nothing else, because a tape once made is as good as fixed: a file
+listed twice keeps its true place, and if you do move tracks about, the mark stays with the
+number. Saving writes a new file, and the mark is put on it again. Files lined up but not yet saved as a tape have nowhere to keep one. Being
 an attribute of the file rather than part of its contents, the mark stays behind when a tape is
 handed on: whoever gets it starts at the top, not where its maker stopped listening.
 

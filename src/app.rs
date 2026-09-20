@@ -69,7 +69,7 @@ impl App {
         let source = held.map_or_else(|| Self::file(&asked), Ok)?;
         // A file keeps its own bookmark; a tape keeps one for all its tracks, which the session knows.
         let kept = || bookmark::read(&source.path).ok().flatten().map(|mark| mark.millisecond);
-        let kept = if self.session.keeps_mark() { self.session.mark_on(&source.path) } else { kept() };
+        let kept = if self.session.keeps_mark() { self.session.mark_here() } else { kept() };
         let mark = kept.and_then(|v| i64::try_from(v).ok()).unwrap_or(-1);
         let start = request["start"].as_i64().unwrap_or(-1);
         let ignore = flag(request, "ignore");

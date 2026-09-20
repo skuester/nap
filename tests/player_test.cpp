@@ -184,6 +184,9 @@ private slots:
         p.seek(11850); QTRY_VERIFY_WITH_TIMEOUT(p.stopped(), 5000); QCOMPARE(index(), 0);
         // A track inside a tape is bookmarked like any other: the mark is the tape's, kept on the .tape.
         p.saveBookmark(); QCOMPARE(notices.last()[0].toString(), QString("Bookmarked")); QVERIFY(p.bookmark() >= 0);
+        // The mark is a track number, so this file's second listing, the very same file, does not show it.
+        p.next(); QCOMPARE(index(), 1); QCOMPARE(p.bookmark(), -1); QCOMPARE(p.tape()["markIndex"].toInt(), 0);
+        p.previous(); QCOMPARE(index(), 0); QVERIFY(p.bookmark() >= 0);
         p.saveBookmark(true); QCOMPARE(notices.last()[0].toString(), QString("Bookmark removed")); QCOMPARE(p.bookmark(), -1);
         QDesktopServices::setUrlHandler("file", this, "openedUrl");
         p.openFolder(0); QCOMPARE(opened, QUrl::fromLocalFile(directory.path()));
@@ -226,6 +229,16 @@ private slots:
         // Told to ignore it, or to start somewhere, the tape starts at its top, and keeps its mark.
         p.load({saved}, true, -1, true); QCOMPARE(index(p), 0); QTRY_COMPARE(p.duration(), 12000); QCOMPARE(p.position(), 0);
         p.load({saved}, true, 2000); QCOMPARE(index(p), 0); QTRY_COMPARE(p.position(), 2000);
+        // A track asked for is where it starts instead: at its top, or with a time that far into it.
+        p.load({saved}, true, -1, false, 2); QCOMPARE(index(p), 1); QCOMPARE(p.filename(), QString("Third.wav"));
+        QTRY_COMPARE(p.duration(), 12000); QCOMPARE(p.position(), 0); QCOMPARE(p.bookmark(), 4000);
+        p.load({saved}, true, 3000, false, 2); QCOMPARE(index(p), 1); QTRY_COMPARE(p.position(), 3000);
+        p.load({saved}, true, -1, false, 9); QCOMPARE(index(p), 0);
+        QVERIFY(notices.last()[0].toString().startsWith("This tape has only 2 tracks"));
+        // A single file has only the one track, so there a track number is ignored.
+        const int said = notices.count();
+        p.load({audio}, true, 1000, false, 5); QTRY_COMPARE(p.position(), 1000); QCOMPARE(notices.count(), said);
+        p.load({saved}, true, 2000);
         QCOMPARE(p.tape()["markIndex"].toInt(), 1);
         p.saveBookmark(true); QCOMPARE(p.tape()["markIndex"].toInt(), -1);
         p.load({saved}, true); QCOMPARE(index(p), 0);

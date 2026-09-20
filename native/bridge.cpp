@@ -25,7 +25,7 @@ extern "C" int nap_run(const char *json) {
     if (engine.rootObjects().isEmpty()) return 1;
     QStringList paths;
     for (const auto &path : options["paths"].toArray()) paths << path.toString();
-    if (!paths.isEmpty()) player.load(paths, options["paused"].toBool(), options["start"].toInteger(-1), options["ignore"].toBool());
+    if (!paths.isEmpty()) player.load(paths, options["paused"].toBool(), options["start"].toInteger(-1), options["ignore"].toBool(), options["track"].toInt());
     const auto screenshot = options["screenshot"].toString();
     if (!screenshot.isEmpty()) {
         QTimer::singleShot(1200, &app, [&] {

@@ -8,7 +8,7 @@ env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QPA_PLATFORMTHEME="generi
            QT_QUICK_BACKEND="software", QT_QUICK_CONTROLS_STYLE="Basic")
 binary = pathlib.Path("target/release/nap").resolve()
 for args, expected in [(["--help"], 0), (["--version"], 0), (["--time", "nan"], 2),
-                       (["--volume", "101"], 2), (["--time", "1:60"], 2),
+                       (["--volume", "101"], 2), (["--time", "1:60"], 2), (["--track", "0"], 2),
                        (["/does/not/exist.wav"], 2), (["one", "two"], 2)]:
     result = subprocess.run([binary, *args], env=env, capture_output=True, timeout=10)
     assert result.returncode == expected, (args, result.stderr.decode())
