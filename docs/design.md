@@ -29,7 +29,8 @@ was this, on a real tape?":
 | Skipping tracks on a tape | A CD player's keys: tap to change track, hold to wind |
 | Saving an unsaved tape | The red REC key, taking OPEN's place because OPEN is what would discard it |
 | Two halves of a playlist | Sides A and B: the J-card numbers them A1, B1; the cassette turns over; a side running out stops the deck |
-| Turning the tape over | A FLIP key, taking MARK's place because a bookmark belongs to a single file |
+| Turning the tape over | A FLIP key, taking KEYS's place because the keys are still a ? away |
+| Where you stopped listening | A bookmark on the tape itself, not in it: handed on, the tape starts at the top |
 | A progress bar | The deck's own display, in the same 4px cells as the visualizers |
 | Tape length | The "C-60" class printed on every blank tape, computed from the real length |
 

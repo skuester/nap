@@ -1,6 +1,7 @@
 //! What is in the deck: the current tape, which of its tracks is up, and any archive being
 //! packed in the background. A lone audio file is a tape of one unnamed track.
 
+use crate::bookmark::{self, Mark};
 use crate::insert;
 use crate::tape::{self, Brief, Kind, Source, Tape};
 use crate::transport;
@@ -28,6 +29,11 @@ pub struct Session {
     tape: Tape,
     index: usize,
     dirty: bool,
+    /// The `.tape` or `.jcard` this tape was opened from or last saved to, if it has been either.
+    origin: Option<PathBuf>,
+    /// The tape's bookmark: the track it is on, and how many milliseconds in. It is kept on the
+    /// origin, as an attribute of that file, and follows its track through edits.
+    mark: Option<(PathBuf, u64)>,
     job: Option<Job>,
     briefs: HashMap<PathBuf, Brief>,
     /// The cover held inside the tape, as the interface wants it, and which cover that was.
@@ -58,15 +64,65 @@ impl Session {
         json!({"index": index, "path": self.tape.tracks.get(index).map(|track| &track.path), "position": 0})
     }
 
-    /// Put a tape in the deck. The reply mentions any tracks it lists that could not be found.
-    fn insert_tape(&mut self, (tape, missing): (Tape, Vec<String>)) -> Value {
-        (self.tape, self.index, self.dirty) = (tape, 0, false);
+    /// Put a tape in the deck, with the bookmark its file carries. Unless the request says to
+    /// `ignore` it or to `start` somewhere else, the tape comes up where it was left: the reply's
+    /// `resume` is that place. The reply also mentions any listed tracks that could not be found.
+    fn insert_tape(&mut self, (tape, missing): (Tape, Vec<String>), origin: Option<&Path>, request: &Value) -> Value {
+        (self.tape, self.index, self.dirty, self.origin) = (tape, 0, false, origin.map(Path::to_owned));
+        let kept = origin.and_then(|file| bookmark::read(file).ok().flatten());
+        let on = |mark: Mark| Some((self.tape.tracks.get(mark.track)?.path.clone(), mark.millisecond));
+        self.mark = kept.and_then(on);
+        let elsewhere = request["ignore"].as_bool().unwrap_or(false) || request["start"].as_i64().unwrap_or(-1) >= 0;
+        let resume = if elsewhere { json!({}) } else { self.resume() };
         let notice = match missing.len() {
             0 => String::new(),
             1 => format!("Could not find {}", missing[0]),
             n => format!("Could not find {n} of this tape's tracks: {}", missing.join(", ")),
         };
-        json!({"notice": notice})
+        json!({"notice": notice, "resume": resume})
+    }
+
+    /// Whether the bookmark is the tape's, rather than the one file's that is playing.
+    pub fn keeps_mark(&self) -> bool {
+        self.origin.is_some() || self.tape.tracks.len() > 1
+    }
+
+    /// The bookmark as a place in the listing as it now stands.
+    fn marked(&self) -> Option<Mark> {
+        let (path, millisecond) = self.mark.as_ref()?;
+        let track = self.tape.tracks.iter().position(|track| track.path == *path)?;
+        Some(Mark { track, millisecond: *millisecond })
+    }
+
+    /// How far into the track at `path` the bookmark is, if that is the track it is on.
+    pub fn mark_on(&self, path: &Path) -> Option<u64> {
+        self.mark.as_ref().filter(|(on, _)| on == path).map(|(_, millisecond)| *millisecond)
+    }
+
+    /// Put the bookmark, or the lack of one, on `file`.
+    fn keep_mark(&self, file: &Path) -> Result<(), String> {
+        self.marked().map_or_else(|| bookmark::clear(file), |mark| bookmark::write(file, mark))
+    }
+
+    /// Bookmark this `position` in the track that is up, or with none remove the bookmark. A tape
+    /// with unsaved changes no longer matches its file, so the mark waits to be saved with it.
+    pub fn bookmark(&mut self, position: Option<u64>) -> Result<Value, String> {
+        let origin = self.origin.clone().ok_or("Save the tape first: its bookmark is kept on the tape")?;
+        let placed = position.and_then(|at| Some((self.current()?.path.clone(), at)));
+        let before = std::mem::replace(&mut self.mark, placed);
+        if !self.dirty {
+            self.keep_mark(&origin).inspect_err(|_| self.mark = before)?;
+        }
+        let waiting = if self.dirty { ". It is kept when the tape is saved" } else { "" };
+        let done = if position.is_some() { "Bookmarked" } else { "Bookmark removed" };
+        Ok(json!({"mark": position.map_or(-1, |at| at as i64), "notice": format!("{done}{waiting}")}))
+    }
+
+    /// Go to the bookmark: its track comes up, and the reply says where in it to be.
+    pub fn resume(&mut self) -> Value {
+        let Some(mark) = self.marked() else { return json!({}) };
+        self.index = mark.track;
+        json!({"index": mark.track, "path": self.tape.tracks[mark.track].path, "position": mark.millisecond})
     }
 
     /// Open `paths` as the new tape, or with `append` add their audio to the current one.
@@ -77,14 +133,16 @@ impl Session {
         if request["append"].as_bool().unwrap_or(false) {
             self.dirty |= !audio.is_empty();
             self.tape.tracks.extend(audio);
-            return Ok(json!({"notice": ""}));
+            return Ok(json!({"notice": "", "resume": {}}));
         }
         // A tape is played from where it is, so even an archive is in the deck at once.
         match paths.first().map(|first| (tape::kind(first), first)) {
-            Some((Kind::Archive, archive)) => Ok(self.insert_tape(tape::read_archive(archive)?)),
-            Some((Kind::Index, index)) => Ok(self.insert_tape(tape::read_index(index)?)),
+            Some((Kind::Archive, archive)) => {
+                Ok(self.insert_tape(tape::read_archive(archive)?, Some(archive), request))
+            }
+            Some((Kind::Index, index)) => Ok(self.insert_tape(tape::read_index(index)?, Some(index), request)),
             _ if audio.is_empty() => Err("Nothing to play there".into()),
-            _ => Ok(self.insert_tape((Tape { tracks: audio, ..Tape::default() }, Vec::new()))),
+            _ => Ok(self.insert_tape((Tape { tracks: audio, ..Tape::default() }, Vec::new()), None, request)),
         }
     }
 
@@ -120,7 +178,12 @@ impl Session {
             Ok(dest) => {
                 self.dirty = false;
                 self.relocate(&dest);
-                json!({"active": false, "notice": format!("Saved {}", file_name(&dest))})
+                // A saved tape is a new file, so the bookmark is put on it afresh; from now on
+                // this is the file the tape is.
+                let kept = self.keep_mark(&dest).err().filter(|_| self.mark.is_some());
+                self.origin = Some(dest.clone());
+                let lost = kept.map(|error| format!(", but not its bookmark: {error}")).unwrap_or_default();
+                json!({"active": false, "notice": format!("Saved {}{lost}", file_name(&dest))})
             }
             Err(error) => json!({"active": false, "notice": error}),
         }
@@ -162,6 +225,7 @@ impl Session {
         json!({"name": self.tape.name, "from": self.tape.from, "note": self.tape.note,
             "cover": cover.map(|cover| &cover.path), "coverHeld": cover.is_some_and(|cover| cover.span.is_some()),
             "tracks": tracks, "index": self.index, "seconds": seconds, "dirty": self.dirty, "mixtape": mixtape,
+            "markIndex": self.marked().map_or(-1, |mark| mark.track as i64),
             "sideB": self.tape.side_b.map_or(-1, |first| first as i64), "side": self.side()})
     }
 

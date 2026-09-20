@@ -67,8 +67,9 @@ impl App {
         let asked = PathBuf::from(request["path"].as_str().ok_or("missing path")?);
         let held = self.session.listed(&asked).filter(|track| track.span.is_some()).cloned();
         let source = held.map_or_else(|| Self::file(&asked), Ok)?;
-        // A bookmark is kept on the file itself, and a track inside a tape has no file of its own.
-        let kept = if source.span.is_none() { bookmark::read(&source.path).ok().flatten() } else { None };
+        // A file keeps its own bookmark; a tape keeps one for all its tracks, which the session knows.
+        let kept = || bookmark::read(&source.path).ok().flatten().map(|mark| mark.millisecond);
+        let kept = if self.session.keeps_mark() { self.session.mark_on(&source.path) } else { kept() };
         let mark = kept.and_then(|v| i64::try_from(v).ok()).unwrap_or(-1);
         let start = request["start"].as_i64().unwrap_or(-1);
         let ignore = flag(request, "ignore");
@@ -82,18 +83,17 @@ impl App {
         Ok(reply)
     }
 
-    fn bookmark(&self, request: &Value) -> Result<Value, String> {
-        let source = self.source.as_ref().ok_or("No file loaded")?;
-        if source.span.is_some() {
-            return Err("a track inside a tape has no file of its own to keep one on".into());
-        }
-        let path = &source.path;
+    fn bookmark(&mut self, request: &Value) -> Result<Value, String> {
+        let path = &self.source.as_ref().ok_or("No file loaded")?.path;
         let position = number(request, "position").max(0);
+        if self.session.keeps_mark() {
+            return self.session.bookmark((!flag(request, "remove")).then_some(position as u64));
+        }
         if flag(request, "remove") {
             bookmark::clear(path)?;
             return Ok(json!({"mark": -1, "notice": "Bookmark removed"}));
         }
-        bookmark::write(path, position as u64)?;
+        bookmark::write(path, (position as u64).into())?;
         Ok(json!({"mark": position, "notice": "Bookmarked"}))
     }
 
@@ -130,6 +130,7 @@ impl App {
             "select" => session.select(number(request, "index").max(0) as usize),
             "ended" => Ok(session.ended(flag(request, "looping"))),
             "flip" => session.flip(),
+            "resume" => Ok(session.resume()),
             "discard" => Ok(session.may_discard(request["action"].as_str().unwrap_or(""), std::time::Instant::now())),
             _ => return None,
         })

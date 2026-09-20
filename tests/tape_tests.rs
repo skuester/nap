@@ -412,7 +412,6 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
         fs::read(&saved).unwrap()[offset as usize..][..length as usize],
         fs::read(temp.path().join("b.mp3")).unwrap()
     );
-    assert!(app.dispatch(&json!({"op":"bookmark", "position": 5})).unwrap_err().contains("inside a tape"));
     assert_eq!(ask(&mut app, json!({"op":"insert", "index": 1}))["file"][0][1], "MPEG audio");
     ask(&mut app, json!({"op":"export", "dest": temp.path().join("list.jcard")}));
     assert!(finish(&mut app)["notice"].as_str().unwrap().starts_with("A J-card lists files where they are"));
@@ -491,6 +490,98 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
             .unwrap_err()
             .contains("absent.tape")
     );
+}
+
+#[test]
+fn a_tape_keeps_one_bookmark_on_its_own_file() {
+    use nap::bookmark::{self, Mark};
+    let temp = tempfile::tempdir().unwrap();
+    let tracks = [
+        copy(temp.path(), "silence.flac", "a.flac"),
+        copy(temp.path(), "silence.mp3", "b.mp3"),
+        copy(temp.path(), "silence.ogg", "c.ogg"),
+    ];
+    let saved = temp.path().join("Marked.tape");
+    let mut app = App::default();
+    // Loose files lined up are not yet a tape anywhere, so there is nowhere to keep its bookmark.
+    assert_eq!(ask(&mut app, json!({"op":"load", "paths": tracks}))["resume"], json!({}));
+    ask(&mut app, json!({"op":"open", "path": tracks[1]}));
+    let refused = app.dispatch(&json!({"op":"bookmark", "position": 5})).unwrap_err();
+    assert_eq!(refused, "Save the tape first: its bookmark is kept on the tape");
+    for track in &tracks {
+        assert_eq!(bookmark::read(track).unwrap(), None, "a tape never marks the files it lists");
+    }
+    ask(&mut app, json!({"op":"export", "dest": saved}));
+    finish(&mut app);
+
+    // Saved, it is a tape: the mark is the track that is up and how far in, kept on the .tape itself.
+    ask(&mut app, json!({"op":"select", "index": 1}));
+    let marked = ask(&mut app, json!({"op":"bookmark", "position": 120}));
+    assert_eq!(marked, json!({"mark": 120, "notice": "Bookmarked"}));
+    assert_eq!(bookmark::read(&saved).unwrap(), Some(Mark { track: 1, millisecond: 120 }));
+    let tar = fs::read(&saved).unwrap();
+    assert!(!tar.windows(12).any(|bytes| bytes == b"nap.bookmark"), "the mark is on the file, not in it");
+    assert_eq!(ask(&mut app, json!({"op":"tape"}))["markIndex"], 1);
+    // Only the marked track shows the mark; Enter from anywhere else brings that track back up.
+    assert_eq!(ask(&mut app, json!({"op":"open", "path": tracks[1]}))["mark"], 120);
+    assert_eq!(ask(&mut app, json!({"op":"open", "path": tracks[0]}))["mark"], -1);
+    ask(&mut app, json!({"op":"select", "index": 2}));
+    assert_eq!(ask(&mut app, json!({"op":"resume"})), json!({"index": 1, "path": tracks[1], "position": 120}));
+    assert_eq!(ask(&mut app, json!({"op":"tape"}))["index"], 1);
+
+    // Opened again it comes up where it was left, inside the archive now, unless told otherwise.
+    let held = saved.join("Marked/b.mp3");
+    let mut app = App::default();
+    let loaded = ask(&mut app, json!({"op":"load", "paths": [saved]}));
+    assert_eq!(loaded["resume"], json!({"index": 1, "path": held, "position": 120}));
+    assert_eq!(ask(&mut app, json!({"op":"tape"}))["index"], 1);
+    assert_eq!(ask(&mut app, json!({"op":"open", "path": held, "start": 120, "ignore": true}))["mark"], 120);
+    for elsewhere in [json!({"ignore": true}), json!({"start": 0})] {
+        let mut request = json!({"op":"load", "paths": [saved]});
+        request.as_object_mut().unwrap().extend(elsewhere.as_object().unwrap().clone());
+        let mut fresh = App::default();
+        assert_eq!(ask(&mut fresh, request)["resume"], json!({}));
+        assert_eq!(ask(&mut fresh, json!({"op":"tape"}))["markIndex"], 1, "passed over, not forgotten");
+    }
+
+    // It follows its track through edits. The file no longer matches an edited tape, so the mark
+    // waits, and is put on the new file when the tape is saved.
+    ask(&mut app, json!({"op":"edit", "action":"move", "from": 1, "to": 0}));
+    assert_eq!(ask(&mut app, json!({"op":"tape"}))["markIndex"], 0);
+    let waiting = ask(&mut app, json!({"op":"bookmark", "position": 200}));
+    assert_eq!(waiting["notice"], "Bookmarked. It is kept when the tape is saved");
+    assert_eq!(bookmark::read(&saved).unwrap(), Some(Mark { track: 1, millisecond: 120 }));
+    ask(&mut app, json!({"op":"export", "dest": saved}));
+    assert_eq!(finish(&mut app)["notice"], "Saved Marked.tape");
+    assert_eq!(bookmark::read(&saved).unwrap(), Some(200.into()));
+    // Two sides change nothing about it.
+    ask(&mut app, json!({"op":"edit", "action":"side", "index": 2}));
+    ask(&mut app, json!({"op":"flip"}));
+    assert_eq!(ask(&mut app, json!({"op":"resume"}))["index"], 0);
+    // Its track taken off the tape, the mark goes with it; saved that way, the file has none.
+    ask(&mut app, json!({"op":"select", "index": 2}));
+    ask(&mut app, json!({"op":"edit", "action":"remove", "index": 0}));
+    assert_eq!(ask(&mut app, json!({"op":"tape"}))["markIndex"], -1);
+    assert_eq!(ask(&mut app, json!({"op":"resume"})), json!({}));
+    ask(&mut app, json!({"op":"export", "dest": saved}));
+    finish(&mut app);
+    assert_eq!(bookmark::read(&saved).unwrap(), None);
+
+    // Removing is the same in reverse, and a J-card keeps its mark just as a tape does.
+    ask(&mut app, json!({"op":"bookmark", "position": 50}));
+    assert_eq!(
+        ask(&mut app, json!({"op":"bookmark", "remove": true})),
+        json!({"mark": -1, "notice": "Bookmark removed"})
+    );
+    assert_eq!(bookmark::read(&saved).unwrap(), None);
+    let card = temp.path().join("list.jcard");
+    fs::write(&card, "#EXTM3U\na.flac\nc.ogg\n").unwrap();
+    bookmark::write(&card, Mark { track: 1, millisecond: 90 }).unwrap();
+    let loaded = ask(&mut app, json!({"op":"load", "paths": [card]}));
+    assert_eq!(loaded["resume"], json!({"index": 1, "path": tracks[2], "position": 90}));
+    // A mark on a track the listing no longer has is no mark at all.
+    bookmark::write(&card, Mark { track: 7, millisecond: 90 }).unwrap();
+    assert_eq!(ask(&mut app, json!({"op":"load", "paths": [card]}))["resume"], json!({}));
 }
 
 #[test]

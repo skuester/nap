@@ -129,10 +129,13 @@ bool Player::mayDiscard(const char *action) {
 }
 void Player::load(const QStringList &paths, bool paused, qint64 start, bool ignore) {
     if (!mayDiscard("open")) return;
-    const auto result = core.request({{"op", "load"}, {"paths", QJsonArray::fromStringList(paths)}});
+    const auto result = core.request({{"op", "load"}, {"paths", QJsonArray::fromStringList(paths)}, {"start", start}, {"ignore", ignore}});
     if (result.contains("error")) { emit notice(result["error"].toString()); return; }
     refreshTape();
-    openFile(reel["tracks"].toList().value(0).toMap()["path"].toString(), paused, start, ignore || trackCount() > 1);
+    // A tape with a bookmark comes up where it was left: on that track, that far in.
+    const auto resume = result["resume"].toObject();
+    if (resume.isEmpty()) openFile(reel["tracks"].toList().value(0).toMap()["path"].toString(), paused, start, ignore || trackCount() > 1);
+    else { openFile(resume["path"].toString(), paused, resume["position"].toInteger(), true); emit notice("Opened at your bookmark"); }
     if (!result["notice"].toString().isEmpty()) emit notice(result["notice"].toString());
 }
 void Player::refreshTape() {
@@ -223,6 +226,15 @@ void Player::saveBookmark(bool remove) {
     if (result.contains("error")) { emit notice("Bookmark failed: " + result["error"].toString()); return; }
     mark = result["mark"].toInteger(-1); emit changed();
     emit notice(result["notice"].toString());
+    refreshTape();
+}
+// On a tape the bookmark may be on another track, which then comes up, playing or not as the deck is.
+void Player::returnToBookmark() {
+    const auto at = core.request({{"op", "resume"}});
+    const auto track = at["path"].toString();
+    if (track.isEmpty() || track == path) { if (mark >= 0) seek(mark); return; }
+    openFile(track, deck != "playing", at["position"].toInteger(), true, deck == "stopped");
+    refreshTape();
 }
 void Player::cycleVisualizer() {
     const auto result = core.request({{"op", "visualizer"}, {"next", true}, {"current", scene}});

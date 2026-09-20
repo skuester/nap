@@ -90,7 +90,8 @@ The full installer requires an existing Hyprland Lua configuration, `xdg-mime`,
   While a mixtape has unsaved changes, OPEN is a red REC key that saves it (see [Mixtapes](#mixtapes)).
 - **Lower cassette ridges:** click, drag, or scroll to set the player's volume.
 - **LOOP / MARK:** toggle repeat or save your place. LOOP latches down; each key's lamp lights while it applies.
-  On a tape with two sides MARK is a FLIP key instead, which turns the tape over; its lamp is lit while side B is up.
+- **KEYS:** shows the key reference. On a tape with two sides it is a FLIP key instead, which turns the tape over,
+  its lamp lit while side B is up; the keys are still a ? away.
 - **The label's title strip:** click anywhere on it (or press I) to unfold the insert; the A mark
   turns over under the pointer as the hint. It is a J-card with the
   embedded cover art, a spine, and liner notes listing the lyrics, every tag in the file
@@ -131,7 +132,7 @@ and AIFF; actual decoding support follows the installed Qt FFmpeg backend.
 | V | Change the visualizer |
 | Ctrl+S | Save the tape (.tape or .jcard) |
 | O / Ctrl+O | Open files, a tape, or a J-card |
-| ? / K | Toggle help |
+| ? / K / Ctrl+K | Toggle help |
 | Delete | Take the picked-out track off the tape (with the insert open) |
 | Esc | Close help; otherwise put back a lifted cover or note; otherwise put away the insert |
 | Q | Quit (asked twice if a tape is unsaved) |
@@ -141,6 +142,17 @@ attribute. They survive renaming and moving on the same filesystem; copying
 between filesystems requires preserving extended attributes. Read-only files or
 filesystems without xattrs show an error instead of pretending to save. There is
 one explicit bookmark per file, and quitting does not overwrite it.
+
+A tape has one bookmark too, for the whole tape: which track, and how far into it. It is kept the
+same way, on the `.tape` (or `.jcard`) itself and never on the files it lists, as `3:62500` for
+62.5 seconds into the third track. Open the tape again and it comes up where you left it, one side
+or two; `--ignore-bookmark` and `--time` start it at the top instead. The diamond shows on the
+label's ruled line while the marked track is up and beside that track in the insert's listing, the
+MARK lamp is lit while the tape has a mark anywhere, and Enter goes to it from any track. The mark
+follows its track through edits; while a tape has unsaved changes it waits, and is put on the file
+when the tape is saved. Files lined up but not yet saved as a tape have nowhere to keep one. Being
+an attribute of the file rather than part of its contents, the mark stays behind when a tape is
+handed on: whoever gets it starts at the top, not where its maker stopped listening.
 
 ## Mixtapes
 
@@ -223,9 +235,9 @@ has gone missing. A file whose own name starts with `#` is written as `./#name`,
 taken for a comment.
 
 On a tape, PREV and NEXT move between tracks, across sides too, and always wrap around. When the last track ends the
-deck auto-stops, cued back at track one; with LOOP on the tape starts over instead. Bookmarks
-belong to single files, so tracks on a tape always start at their beginning, and a track inside a
-`.tape` has no file of its own to keep one on.
+deck auto-stops, cued back at track one; with LOOP on the tape starts over instead. A tape
+has one bookmark of its own (see above), so its tracks always start at their beginning whatever
+marks their files may carry.
 
 ## Omarchy
 

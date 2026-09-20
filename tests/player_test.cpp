@@ -182,8 +182,9 @@ private slots:
         // This tape lists one file twice running: run out, it plays again, and then the tape is over.
         p.seek(11850); QTRY_COMPARE_WITH_TIMEOUT(index(), 1, 5000); QTRY_VERIFY_WITH_TIMEOUT(p.playing() && p.position() < 2000, 5000);
         p.seek(11850); QTRY_VERIFY_WITH_TIMEOUT(p.stopped(), 5000); QCOMPARE(index(), 0);
-        // It has nowhere of its own to keep a bookmark, and says so.
-        p.saveBookmark(); QVERIFY(notices.last()[0].toString().contains("inside a tape")); QCOMPARE(p.bookmark(), -1);
+        // A track inside a tape is bookmarked like any other: the mark is the tape's, kept on the .tape.
+        p.saveBookmark(); QCOMPARE(notices.last()[0].toString(), QString("Bookmarked")); QVERIFY(p.bookmark() >= 0);
+        p.saveBookmark(true); QCOMPARE(notices.last()[0].toString(), QString("Bookmark removed")); QCOMPARE(p.bookmark(), -1);
         QDesktopServices::setUrlHandler("file", this, "openedUrl");
         p.openFolder(0); QCOMPARE(opened, QUrl::fromLocalFile(directory.path()));
         opened.clear(); p.openFolder(); QCOMPARE(opened, QUrl::fromLocalFile(directory.path()));
@@ -193,6 +194,41 @@ private slots:
         p.load({directory.filePath("absent.tape")});
         QVERIFY(notices.last()[0].toString().contains("absent.tape"));
         p.playTrack(9); QCOMPARE(notices.last()[0].toString(), QString("No such track"));
+    }
+    // A tape has one bookmark, kept on its own file: which track, and how far in. Opening the tape
+    // again picks up there.
+    void aTapeRemembersWhereItWasLeft() {
+        const QString third = directory.filePath("Third.wav"); QVERIFY(QFile::copy(audio, third));
+        const QString saved = directory.filePath("Marked.tape");
+        const auto index = [](Player &p) { return p.tape()["index"].toInt(); };
+        {
+            Player p; p.setVolume(0); QSignalSpy notices(&p, &Player::notice);
+            p.load({audio, third}, true); QTRY_COMPARE(p.duration(), 12000);
+            p.saveBookmark(); QVERIFY(notices.last()[0].toString().contains("Save the tape first")); QCOMPARE(p.bookmark(), -1);
+            p.exportTape(QUrl::fromLocalFile(saved));
+            QTRY_VERIFY_WITH_TIMEOUT(p.progress() < 0 && QFile::exists(saved), 5000);
+            p.stop(); p.next(); QTRY_COMPARE(p.filename(), QString("Third.wav")); QTRY_COMPARE(p.duration(), 12000);
+            p.seek(4000); QTRY_COMPARE(p.position(), 4000);
+            p.saveBookmark(); QCOMPARE(notices.last()[0].toString(), QString("Bookmarked"));
+            QCOMPARE(p.bookmark(), 4000); QCOMPARE(p.tape()["markIndex"].toInt(), 1);
+            // The mark shows only on its own track; going to it from another brings that track back up.
+            p.seek(0); p.previous(); QTRY_COMPARE(index(p), 0); QTRY_COMPARE(p.duration(), 12000); QCOMPARE(p.bookmark(), -1);
+            QCOMPARE(p.tape()["markIndex"].toInt(), 1);
+            p.returnToBookmark(); QTRY_COMPARE(p.filename(), QString("Third.wav")); QCOMPARE(index(p), 1);
+            QTRY_COMPARE(p.position(), 4000); QVERIFY(p.stopped()); QCOMPARE(p.bookmark(), 4000);
+            p.seek(9000); p.returnToBookmark(); QCOMPARE(p.position(), 4000);
+        }
+        Player p; p.setVolume(0); QSignalSpy notices(&p, &Player::notice);
+        p.load({saved}, true);
+        QCOMPARE(index(p), 1); QCOMPARE(p.filename(), QString("Third.wav"));
+        QCOMPARE(notices.last()[0].toString(), QString("Opened at your bookmark"));
+        QTRY_COMPARE(p.position(), 4000); QCOMPARE(p.bookmark(), 4000); QVERIFY(!p.playing());
+        // Told to ignore it, or to start somewhere, the tape starts at its top, and keeps its mark.
+        p.load({saved}, true, -1, true); QCOMPARE(index(p), 0); QTRY_COMPARE(p.duration(), 12000); QCOMPARE(p.position(), 0);
+        p.load({saved}, true, 2000); QCOMPARE(index(p), 0); QTRY_COMPARE(p.position(), 2000);
+        QCOMPARE(p.tape()["markIndex"].toInt(), 1);
+        p.saveBookmark(true); QCOMPARE(p.tape()["markIndex"].toInt(), -1);
+        p.load({saved}, true); QCOMPARE(index(p), 0);
     }
     // Every container plays from inside a tape just as it does from a file of its own: some keep
     // their index at the end, so this is as much about seeking within the stretch as reading it.
@@ -260,6 +296,8 @@ private slots:
         }
         QTest::keyClick(w, Qt::Key_K); QVERIFY(w->property("helpVisible").toBool());
         QTest::keyClick(w, Qt::Key_Escape); QVERIFY(!w->property("helpVisible").toBool());
+        QTest::keyClick(w, Qt::Key_K, Qt::ControlModifier); QVERIFY(w->property("helpVisible").toBool());
+        QTest::keyClick(w, Qt::Key_K, Qt::ControlModifier); QVERIFY(!w->property("helpVisible").toBool());
         auto *key = w->findChild<QQuickItem *>("playKey"); QVERIFY(key);
         QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, key->mapToScene(QPointF(50, 40)).toPoint());
         QTRY_VERIFY(p.playing()); p.toggle(); QTRY_VERIFY(!p.playing()); QVERIFY(!p.stopped()); p.seek(0);
@@ -339,10 +377,10 @@ private slots:
         QVERIFY(!p.mayQuit()); QVERIFY(refusals.last()[0].toString().startsWith("This tape is unsaved. Quit again"));
         QVERIFY(p.mayQuit());
         // A tape with two sides: the B beside a row's x starts side B there, the side mark and the
-        // MARK key follow, and F turns the tape over, or with a row picked out moves the turn.
-        auto *markKey = w->findChild<QQuickItem *>("markKey"); QVERIFY(markKey);
+        // KEYS key follow, and F turns the tape over, or with a row picked out moves the turn.
+        auto *keysKey = w->findChild<QQuickItem *>("keysKey"); QVERIFY(keysKey);
         auto *sideMark = w->findChild<QQuickItem *>("sideMark"); QVERIFY(sideMark);
-        QCOMPARE(markKey->property("caption").toString(), QString("MARK"));
+        QCOMPARE(keysKey->property("caption").toString(), QString("KEYS"));
         QQuickItem *turnHere = nullptr;
         QTRY_VERIFY((turnHere = visualChild(w->contentItem(), "turnAt1")));
         QVERIFY(!visualChild(w->contentItem(), "turnAt0")->isVisible());
@@ -351,22 +389,22 @@ private slots:
         QTest::mouseMove(w, onTurn); QTest::qWait(60); QVERIFY(turnHere->isVisible());
         QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, onTurn);
         QCOMPARE(p.tape()["sideB"].toInt(), 1); QCOMPARE(card->property("sideB").toInt(), 1);
-        QCOMPARE(markKey->property("caption").toString(), QString("FLIP")); QVERIFY(!markKey->property("lit").toBool());
+        QCOMPARE(keysKey->property("caption").toString(), QString("FLIP")); QVERIFY(!keysKey->property("lit").toBool());
         QVariant numbered; QVERIFY(QMetaObject::invokeMethod(card, "number", Q_RETURN_ARG(QVariant, numbered), Q_ARG(QVariant, 1)));
         QCOMPARE(numbered.toString(), QString("B1"));
         QTest::qWait(50); QVERIFY(w->grabWindow().save("build/sides-preview.png"));
         card->setProperty("selected", -1);
         QTest::keyClick(w, Qt::Key_F); QTRY_COMPARE(p.tape()["side"].toString(), QString("B"));
-        QVERIFY(markKey->property("lit").toBool());
+        QVERIFY(keysKey->property("lit").toBool());
         // The letter on the cassette changes only once the turn has brought the other face round.
         QTRY_COMPARE(sideMark->property("text").toString(), QString("B"));
         // The key is on the deck, so the insert is put away to reach it.
         QTest::keyClick(w, Qt::Key_I); QTest::qWait(250);
-        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, markKey->mapToScene(QPointF(24, 40)).toPoint());
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, keysKey->mapToScene(QPointF(24, 40)).toPoint());
         QTRY_COMPARE(p.tape()["side"].toString(), QString("A")); QTRY_COMPARE(sideMark->property("text").toString(), QString("A"));
         QTest::keyClick(w, Qt::Key_I); QTest::qWait(500);
         card->setProperty("selected", 1); QTest::keyClick(w, Qt::Key_F);
-        QCOMPARE(p.tape()["sideB"].toInt(), -1); QCOMPARE(markKey->property("caption").toString(), QString("MARK"));
+        QCOMPARE(p.tape()["sideB"].toInt(), -1); QCOMPARE(keysKey->property("caption").toString(), QString("KEYS"));
         card->setProperty("selected", -1);
         // A row's x appears under the pointer and stays put while the pointer moves onto it.
         p.openUrls({QUrl::fromLocalFile(flip)}, true); QCOMPARE(p.tape()["tracks"].toList().size(), 3);

@@ -101,6 +101,7 @@ public:
     Q_INVOKABLE void toggleMute();
     Q_INVOKABLE void toggleLoop();
     Q_INVOKABLE void saveBookmark(bool remove = false);
+    Q_INVOKABLE void returnToBookmark();
     Q_INVOKABLE void openFolder(int track = -1);
     Q_INVOKABLE void cycleVisualizer();
 signals:

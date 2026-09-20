@@ -84,14 +84,14 @@ ApplicationWindow {
     Shortcut { enabled: !win.typing && deck.loaded; sequence: "F"; onActivated: win.insertVisible && jcard.selected > 0 ? deck.turnAt(jcard.selected) : deck.flip() }
     Shortcut { enabled: !win.typing; sequence: "B"; onActivated: deck.saveBookmark() }
     Shortcut { enabled: !win.typing; sequence: "Shift+B"; onActivated: deck.saveBookmark(true) }
-    Shortcut { enabled: !win.typing; sequence: "Return"; onActivated: if (deck.bookmark >= 0) deck.seek(deck.bookmark) }
+    Shortcut { enabled: !win.typing; sequence: "Return"; onActivated: deck.returnToBookmark() }
     Shortcut { enabled: !win.typing; sequence: "L"; onActivated: deck.toggleLoop() }
     Shortcut { enabled: !win.typing; sequence: "M"; onActivated: deck.toggleMute() }
     Shortcut { enabled: !win.typing; sequence: "O"; onActivated: win.open() }
     Shortcut { enabled: !win.typing; sequence: "Ctrl+O"; onActivated: win.open() }
     Shortcut { enabled: !win.typing; sequence: "Q"; onActivated: if (deck.mayQuit()) Qt.quit() }
     Shortcut { enabled: !win.typing; sequence: "?"; onActivated: win.helpVisible = !win.helpVisible }
-    Shortcut { enabled: !win.typing; sequence: "K"; onActivated: win.helpVisible = !win.helpVisible }
+    Shortcut { enabled: !win.typing; sequences: ["K", "Ctrl+K"]; onActivated: win.helpVisible = !win.helpVisible }
     Shortcut { enabled: !win.typing; sequence: "Escape"; onActivated: { if (win.helpVisible) win.helpVisible = false; else if (jcard.zoomed) jcard.putBack(); else win.showInsert(false) } }
     FileDialog {
         id: picker; title: "Load a tape"; fileMode: FileDialog.OpenFiles
@@ -284,10 +284,11 @@ ApplicationWindow {
         Row {
             x: 524; y: 410; spacing: 6
             Transport { implicitWidth: 48; glyph: "loop"; caption: "LOOP"; ink: fg; face: shell; well: win.well; lamp: glow; hasLamp: true; lit: deck.looping; engaged: deck.looping; onClicked: deck.toggleLoop() }
-            // A bookmark belongs to a single file, so on a tape with two sides this key turns it over
-            // instead; its lamp is lit while side B is up.
-            Transport { objectName: "markKey"; implicitWidth: 48; glyph: win.side ? "flip" : "mark"; caption: win.side ? "FLIP" : "MARK"; ink: fg; face: shell; well: win.well; lamp: glow; hasLamp: true; lit: win.side ? win.side === "B" : deck.bookmark >= 0; enabled: deck.loaded; onClicked: win.side ? deck.flip() : deck.saveBookmark() }
-            Transport { implicitWidth: 48; glyph: "help"; caption: "KEYS"; ink: fg; face: shell; well: win.well; engaged: win.helpVisible; onClicked: win.helpVisible = true }
+            // A tape keeps one bookmark for all its tracks, so the lamp is lit while it has one anywhere.
+            Transport { implicitWidth: 48; glyph: "mark"; caption: "MARK"; ink: fg; face: shell; well: win.well; lamp: glow; hasLamp: true; lit: deck.bookmark >= 0 || win.tape.markIndex >= 0; enabled: deck.loaded; onClicked: deck.saveBookmark() }
+            // On a tape with two sides this key turns it over instead, its lamp lit while side B is up;
+            // the keys are still a ? away.
+            Transport { objectName: "keysKey"; implicitWidth: 48; glyph: win.side ? "flip" : "help"; caption: win.side ? "FLIP" : "KEYS"; ink: fg; face: shell; well: win.well; lamp: glow; hasLamp: win.side !== ""; lit: win.side === "B"; engaged: !win.side && win.helpVisible; onClicked: win.side ? deck.flip() : win.helpVisible = true }
         }
         Insert {
             id: jcard
@@ -327,7 +328,7 @@ ApplicationWindow {
             scale: Math.min(1, (parent.height - 32) / implicitHeight)
             Text { text: "Keys"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: fg; bottomPadding: 6 }
             Repeater {
-                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop where the tape is"], [", / .", "Previous / next track start"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["F", "Flip a two-sided tape over"], ["V", "Change the visualizer"], ["Ctrl+S", "Save the tape"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
+                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop where the tape is"], [", / .", "Previous / next track start"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["F", "Flip the tape, or start side B at the picked-out track"], ["V", "Change the visualizer"], ["Delete", "Take the picked-out track off the tape"], ["Ctrl+S", "Save the tape"], ["O", "Open a file"], ["? / Ctrl+K", "Show or hide these keys"], ["Q", "Quit"]]
                 Row {
                     required property var modelData
                     width: parent.width
@@ -335,7 +336,6 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. On a tape they are always PREV and NEXT: tap to change track, hold to wind. While a tape has unsaved changes OPEN becomes REC, which saves it; opening something else or quitting then has to be asked twice. Drag or scroll the grooves under the tape to set the volume. Click the label's title strip to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it. The B beside a row's x starts side B at that track (so does F, with the row picked out); MARK then becomes FLIP, and side A running out stops the deck with side B turned up, unless LOOP is on."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }

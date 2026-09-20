@@ -84,7 +84,7 @@ fn bookmark_roundtrip_rename_and_start_policy() {
     app.dispatch(&json!({"op":"bookmark", "position":7000})).unwrap();
     let renamed = temp.path().join("renamed.wav");
     fs::rename(first, &renamed).unwrap();
-    assert_eq!(bookmark::read(&renamed).unwrap(), Some(7000));
+    assert_eq!(bookmark::read(&renamed).unwrap(), Some(7000.into()));
     assert_eq!(app.dispatch(&json!({"op":"open", "path":renamed})).unwrap()["pending"], 7000);
     assert_eq!(app.dispatch(&json!({"op":"open", "path":renamed,"start":1000})).unwrap()["pending"], 1000);
     assert_eq!(app.dispatch(&json!({"op":"open", "path":renamed,"ignore":true})).unwrap()["pending"], -1);
@@ -97,9 +97,16 @@ fn bookmark_roundtrip_rename_and_start_policy() {
 }
 #[test]
 fn corrupt_bookmarks_are_ignored() {
-    for value in [b"nope".as_slice(), b"-1", b"18446744073709551616"] {
+    for value in [b"nope".as_slice(), b"-1", b"18446744073709551616", b"0:500", b"two:500", b"2:", b"2:5:9", b"\xff"] {
         assert_eq!(bookmark::decode(value), None);
     }
+    // A bare number is a single file's, or a tape's first track; a tape counts its tracks from one.
+    use bookmark::Mark;
+    assert_eq!(bookmark::decode(b" 7000\n"), Some(Mark { track: 0, millisecond: 7000 }));
+    assert_eq!(bookmark::decode(b"3:62500"), Some(Mark { track: 2, millisecond: 62500 }));
+    assert_eq!(bookmark::decode(b"1:9"), Some(9.into()));
+    assert_eq!(bookmark::encode(Mark { track: 2, millisecond: 62500 }), "3:62500");
+    assert_eq!(bookmark::encode(7000.into()), "7000");
 }
 #[test]
 fn theme_validates_colors_and_prefers_state_directory() {

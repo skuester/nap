@@ -301,8 +301,10 @@ Item {
                     // Side B begins under a rule of its own.
                     Rectangle { visible: row.index === insert.sideB; x: 6; width: parent.width - 12; height: 1; color: insert.ink; opacity: 0.7 }
                     Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: row.up ? "▶" : insert.number(row.index); font.family: insert.mono; font.pixelSize: row.up ? 8 : 10; color: row.up ? insert.ink : insert.inkDim }
+                    // The tape's bookmark, beside the track it is on: the same diamond as on the label's ruled line.
+                    Rectangle { visible: row.index === insert.tape.markIndex; x: 20.5; anchors.verticalCenter: parent.verticalCenter; width: 5; height: 5; rotation: 45; antialiasing: true; color: insert.ink }
                     Text {
-                        x: 28; width: parent.width - 74 - (turn.visible ? 14 : 0); anchors.verticalCenter: parent.verticalCenter
+                        x: 30; width: parent.width - 76 - (turn.visible ? 14 : 0); anchors.verticalCenter: parent.verticalCenter
                         text: row.modelData.title || row.modelData.file; elide: Text.ElideRight
                         font.family: insert.mono; font.pixelSize: 10; font.weight: row.up ? Font.Bold : Font.Normal; color: insert.ink
                     }
