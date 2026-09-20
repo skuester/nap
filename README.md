@@ -1,8 +1,9 @@
 # nap — Nice Audio Player
 
-A little cassette deck for your desktop. One file, a paper label, two moving
-reels, and a live waveform behind the plastic window. Made for the same quiet,
-keyboard-first desktop as npr and nvp.
+A little cassette deck for your desktop: a paper label, two moving reels, a live display behind
+the plastic window, and a J-card insert with everything the file knows about itself. Play one
+file, or line several up as a mixtape, sign it, and save it as a single `.tape` to hand to a
+friend. Made for the same quiet, keyboard-first desktop as npr and nvp.
 
 ![nap cassette deck](docs/preview.png)
 
@@ -41,7 +42,7 @@ precedence over bookmarks. `--help` lists all options. Use `--` before a filenam
 that begins with a dash.
 
 ```sh
-make install                       # checkout links, Hyprland rules, audio defaults
+make install                       # checkout links, Hyprland rules, file types, icons, defaults
 make uninstall
 ```
 
@@ -60,8 +61,9 @@ where nap is still selected. Manually edited rules are kept as a backup.
 nap's own file types are part of this. [`nap-mime.xml`](nap-mime.xml) defines
 `application/x-nap-tape` (`*.tape`) and `application/x-nap-jcard` (`*.jcard`); the installer links
 it into `~/.local/share/mime/packages`, then runs `update-mime-database` and
-`update-desktop-database`, so a file manager knows what a `.tape` is and that nap opens it. A `.tape` is declared a kind of tar, so archive tools still offer to
-open it. Selecting several audio files and opening them with nap lines them up as one tape.
+`update-desktop-database`, so a file manager knows what a `.tape` is and that nap opens it. A
+`.tape` is declared a kind of tar, so archive tools still offer to open it. Selecting several
+audio files and opening them with nap lines them up as one tape.
 Uninstall removes the definitions again.
 
 nap and its two file types have their own icons, in [`icons/`](icons): the deck for the
@@ -71,7 +73,8 @@ the prefix's hicolor icon theme under the names the icon theme specification loo
 `nap --install-hyprland [--link path/to/hypr/nap.lua]` and
 `nap --uninstall-hyprland` manage just the window rules. An active Hyprland session
 is reloaded and checked for configuration errors after installation/removal.
-The full installer requires an existing Hyprland Lua configuration and `xdg-mime`.
+The full installer requires an existing Hyprland Lua configuration, `xdg-mime`,
+`update-mime-database`, and `update-desktop-database`.
 
 ## The deck
 
@@ -82,12 +85,15 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
 - **PLAY / PAUSE, STOP, OPEN:** physical-style keys that follow a real deck's mechanism. PLAY is lit only
   while the head is engaged (playing or paused). STOP lifts the head and leaves the tape where it is;
   REW and FWD then become PREV and NEXT, which find the start of a track (on a single file, its beginning).
+  While a mixtape has unsaved changes, OPEN is a red REC key that saves it (see [Mixtapes](#mixtapes)).
 - **Lower cassette ridges:** click, drag, or scroll to set the player's volume.
 - **LOOP / MARK:** toggle repeat or save your place. LOOP latches down; each key's lamp lights while it applies.
 - **The label's title strip:** click anywhere on it (or press I) to unfold the insert; the A mark
   turns over under the pointer as the hint. It is a J-card with the
   embedded cover art, a spine, and liner notes listing the lyrics, every tag in the file
-  (custom fields included), and its technical details. Click the folder to open it in your file manager. Files without art get a typeset cover.
+  (custom fields included), and its technical details. Click the folder to open it in your file
+  manager, and a cover picture to lift it off the card for a closer look. Files without art get a
+  typeset cover.
 - **Plastic window:** a live display drawn from decoded PCM samples, with no synthetic animation.
   Click it (or press V) to step through its scenes; the choice is remembered in
   `$XDG_STATE_HOME/nap/visualizer`:
@@ -122,8 +128,9 @@ and AIFF; actual decoding support follows the installed Qt FFmpeg backend.
 | Ctrl+S | Save the tape (.tape or .jcard) |
 | O / Ctrl+O | Open files, a tape, or a J-card |
 | ? / K | Toggle help |
-| Esc | Close help |
-| Q | Quit |
+| Delete | Take the picked-out track off the tape (with the insert open) |
+| Esc | Close help; otherwise put back a lifted cover or note; otherwise put away the insert |
+| Q | Quit (asked twice if a tape is unsaved) |
 
 Bookmarks are stored as milliseconds in the file's `user.nap.bookmark` extended
 attribute. They survive renaming and moving on the same filesystem; copying
@@ -191,8 +198,9 @@ belong to single files, so tracks on a tape always start at their beginning.
 nap reads `background`, `foreground`, `accent`, and `color1` (its red, for REC) from the active theme's
 `colors.toml`, checking `$XDG_STATE_HOME/omarchy/current/theme` first, then
 `$XDG_CONFIG_HOME/omarchy/current/theme` (with standard home-directory defaults).
-Every surface is mixed from those three colors, so the deck follows light and dark
-themes alike: the label is foreground-colored paper printed in background-colored ink.
+Every surface is mixed from the first three, so the deck follows light and dark themes alike:
+the label is foreground-colored paper printed in background-colored ink. The red is used for
+the REC key and nothing else.
 Restart nap after changing themes.
 
 The app ID is `nap`. The installed [Hyprland 0.55+ Lua rules](hypr/nap.lua)
@@ -203,24 +211,30 @@ desktop settings.
 
 ## Development
 
-Rust owns CLI parsing, startup/seek/volume policy, file validation, bookmarks,
-theme loading, desktop installation, and MIME restoration. The C++ adapter in
+Rust owns CLI parsing, startup/seek/volume policy, the transport's state machine, file
+validation, bookmarks, tag reading, mixtapes (the index format, `.tape` archives, the tape in the
+deck and its editing), the visualizers' signal analysis, theme loading, desktop installation, and
+MIME restoration. The C++ adapter in
 `native/` owns Qt Multimedia objects and forwards requests to the Rust core over
 a synchronous C ABI. QML draws the cassette and routes input. The Qt adapter and
 QML resources are embedded in the Rust executable by `build.rs`; there is no
 runtime dependency on a separate helper process, Quickshell, or a browser.
+[docs/design.md](docs/design.md) records the design language and how to work on the interface.
 
 `cargo test --locked` runs Rust unit/integration tests for the core and installer.
 `make check` runs those plus Qt/CLI tests, `cargo fmt --all --check`, and
 `cargo clippy --all-targets --locked -- -D warnings`, following the siblings.
-Installer tests use temporary configurations and a fake MIME backend, never
+Installer tests use temporary configurations, a fake MIME backend, and stand-in scripts for the
+system tools; the tests that run the real executable give it a sandboxed home. None of them touch
 your desktop preferences.
 
 `make test` generates a silent-output test tone in a temporary directory, checks
 real decoding and nonzero waveform samples, playback, seeks, rename-safe bookmark
-restoration, keyboard and mouse input, CLI validation, and offscreen rendering.
+restoration, a whole mixtape (track changes, auto-advance, editing, saving, reloading), keyboard
+and mouse input, CLI validation, and offscreen rendering.
 Tests need access to an initializing Qt audio backend, even at zero volume.
-The rendered empty deck is saved to `build/preview.png`.
+The rendered empty deck is saved to `build/preview.png`, with the insert, a mixtape's insert, and
+its note beside it.
 
 `make crap` scores every function for change risk (CRAP = complexity² × (1 − coverage)³ +
 complexity) and fails if any exceeds 12. Rust is scored by
@@ -236,9 +250,9 @@ QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
 ./target/release/nap --screenshot /tmp/nap.png
 ```
 
-The waveform uses Qt's [QAudioBufferOutput](https://doc.qt.io/qt-6/qaudiobufferoutput.html),
+The visualizers use Qt's [QAudioBufferOutput](https://doc.qt.io/qt-6/qaudiobufferoutput.html),
 available with the FFmpeg backend since Qt 6.8. It reflects decoded audio before
-the volume control, so lowering volume does not flatten the visualization.
+the volume control, so lowering volume does not flatten them.
 
 ## License
 
