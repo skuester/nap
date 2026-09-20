@@ -2,7 +2,7 @@
 
 ## Product & Design Direction
 
-Read [brief.md](brief.md) before changing behavior or UI. Keep nap simple and consistent with sibling projects `~/code/npr` and `~/code/nvp`. Balance Omarchy minimalism with a tactile, skeuomorphic cassette player: filename label, spools that rotate only during playback, a waveform between them, and large square transport buttons below. Preserve five-second REW/FWD taps and continuous seeking while held. Follow sibling keyboard conventions, including `?` for help, Space for play/pause, `b` for bookmark, `i` for the insert, and `q` for quit.
+Read [brief.md](brief.md) before changing behavior or UI, and [docs/design.md](docs/design.md) before touching anything visible: it records the design language (palette tokens, the cell grid, paper and ink, motion), the render-and-look workflow, and the traps already found. Keep nap simple and consistent with sibling projects `~/code/npr` and `~/code/nvp`. Balance Omarchy minimalism with a tactile, skeuomorphic cassette player: filename label, spools that rotate only during playback, a waveform between them, and large square transport buttons below. Preserve five-second REW/FWD taps and continuous seeking while held. Follow sibling keyboard conventions, including `?` for help, Space for play/pause, `b` for bookmark, `i` for the insert, and `q` for quit.
 
 ## Project Structure & Module Organization
 
