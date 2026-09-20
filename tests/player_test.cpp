@@ -171,10 +171,13 @@ private slots:
         QCOMPARE(p.insert()["file"].toList().first().toList().last().toString(), QString("WAV"));
         QTest::qWait(700); QVERIFY(w->grabWindow().save("build/insert-preview.png"));
         QTest::keyClick(w, Qt::Key_Escape); QVERIFY(!w->property("insertVisible").toBool());
+        // The whole title strip of the label opens the insert, not just the side mark on it.
         auto *badge = w->findChild<QQuickItem *>("insertBadge"); QVERIFY(badge);
-        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, badge->mapToScene(QPointF(15, 15)).toPoint());
-        QVERIFY(w->property("insertVisible").toBool());
-        QTest::keyClick(w, Qt::Key_I); QVERIFY(!w->property("insertVisible").toBool());
+        for (const auto &spot : {QPointF(15, 15), QPointF(500, 12)}) {
+            QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, badge->mapToScene(spot).toPoint());
+            QVERIFY(w->property("insertVisible").toBool());
+            QTest::keyClick(w, Qt::Key_I); QVERIFY(!w->property("insertVisible").toBool());
+        }
         QTest::keyClick(w, Qt::Key_K); QVERIFY(w->property("helpVisible").toBool());
         QTest::keyClick(w, Qt::Key_Escape); QVERIFY(!w->property("helpVisible").toBool());
         auto *key = w->findChild<QQuickItem *>("playKey"); QVERIFY(key);
@@ -219,7 +222,14 @@ private slots:
             QVERIFY(std::abs(tilt) >= 1 && std::abs(tilt) <= 2.6); tilts << tilt;
         }
         QVERIFY(tilts.size() > 1); QVERIFY(card->property("zoomed").toBool());
+        QCOMPARE(card->property("held").toString(), QString("cover"));
         QTest::keyClick(w, Qt::Key_Escape);
+        QVERIFY(!card->property("zoomed").toBool()); QVERIFY(w->property("insertVisible").toBool());
+        // The note comes out the same way, and a click beside it puts it back.
+        QVERIFY(QMetaObject::invokeMethod(card, "lift", Q_ARG(QVariant, "note")));
+        QCOMPARE(card->property("held").toString(), QString("note")); QTest::qWait(250);
+        QVERIFY(w->grabWindow().save("build/note-preview.png"));
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, QPoint(12, 12));
         QVERIFY(!card->property("zoomed").toBool()); QVERIFY(w->property("insertVisible").toBool());
         QTest::qWait(50); QVERIFY(w->grabWindow().save("build/mixtape-preview.png"));
         QTest::keyClick(w, Qt::Key_Delete); QCOMPARE(p.tape()["tracks"].toList().size(), 1);

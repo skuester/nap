@@ -77,7 +77,8 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
   REW and FWD then become PREV and NEXT, which find the start of a track (on a single file, its beginning).
 - **Lower cassette ridges:** click, drag, or scroll to set the player's volume.
 - **LOOP / MARK:** toggle repeat or save your place. LOOP latches down; each key's lamp lights while it applies.
-- **The label's A mark:** click it (or press I) to unfold the insert, a J-card with the
+- **The label's title strip:** click anywhere on it (or press I) to unfold the insert; the A mark
+  turns over under the pointer as the hint. It is a J-card with the
   embedded cover art, a spine, and liner notes listing the lyrics, every tag in the file
   (custom fields included), and its technical details. Click the folder to open it in your file manager. Files without art get a typeset cover.
 - **Plastic window:** a live display drawn from decoded PCM samples, with no synthetic animation.
@@ -130,13 +131,16 @@ now playing a tape. Drag rows to reorder, double-click one to play it, and use t
 Delete) to take it off. Double-click the tape's name to retitle it in place. Drop an image on the
 cover to make it the tape's own. The liner notes follow whichever track you pick out.
 
-A tape for a friend wants signing: double-click "Sign your name" under the tape's name, and
-"Write a note to go with this tape" at the top of the liner notes. Both are typed straight onto
-the card. In the note, Enter starts a new line; Ctrl+Enter or a click elsewhere keeps it, and Esc
-gives it up. Double-click a cover picture to lift it off the card for a closer look (it never
-lands quite straight); a click or Esc puts it back.
+A tape for a friend wants signing: double-click "Sign your name" under the tape's name and type
+straight onto the card. "Tuck in a note" beneath it lifts out a slip of ruled paper to write on;
+once there is one it reads "Read the note", and whoever gets the tape finds it in the same place.
+On the slip, Enter starts a new line; Ctrl+Enter or a click elsewhere keeps it, and Esc gives it
+up. Click a cover picture to lift it off the card for a closer look too. Neither the picture nor
+the note ever lands quite straight; a click beside them or Esc puts them back.
 
 ![a mixtape's insert](docs/mixtape.png)
+
+![the note that came with the tape](docs/note.png)
 
 Ctrl+S saves the tape, and the display between the reels becomes the progress bar while it packs.
 

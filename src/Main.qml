@@ -80,7 +80,7 @@ ApplicationWindow {
     Shortcut { enabled: !win.typing; sequence: "Q"; onActivated: Qt.quit() }
     Shortcut { enabled: !win.typing; sequence: "?"; onActivated: win.helpVisible = !win.helpVisible }
     Shortcut { enabled: !win.typing; sequence: "K"; onActivated: win.helpVisible = !win.helpVisible }
-    Shortcut { enabled: !win.typing; sequence: "Escape"; onActivated: { if (win.helpVisible) win.helpVisible = false; else if (jcard.zoomed) jcard.zoomed = false; else win.showInsert(false) } }
+    Shortcut { enabled: !win.typing; sequence: "Escape"; onActivated: { if (win.helpVisible) win.helpVisible = false; else if (jcard.zoomed) jcard.putBack(); else win.showInsert(false) } }
     FileDialog {
         id: picker; title: "Load a tape"; fileMode: FileDialog.OpenFiles
         nameFilters: ["Audio and tapes (*.mp3 *.flac *.wav *.ogg *.opus *.m4a *.aac *.aiff *.aif *.wma *.ape *.alac *.wv *.tape *.jcard)", "All files (*)"]
@@ -124,12 +124,12 @@ ApplicationWindow {
                 id: label
                 x: 30; y: 22; width: 580; height: 252; radius: 8
                 color: paper
-                // The side mark doubles as the way into the insert: under the pointer it turns over to show
+                // The side mark hints at the way into the insert: with the pointer on the title strip it turns over to show
                 // a pictogram of the card, cover art above lines of type.
                 Rectangle {
                     id: insertBadge
                     objectName: "insertBadge"
-                    readonly property bool turned: badgeArea.containsMouse && deck.loaded
+                    readonly property bool turned: titleStrip.containsMouse && deck.loaded
                     x: 20; y: 16; width: 30; height: 30; radius: 3
                     color: turned ? ink : "transparent"; border.color: ink; border.width: 2
                     Text { visible: !parent.turned; anchors.centerIn: parent; text: "A"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: ink }
@@ -141,15 +141,17 @@ ApplicationWindow {
                         Rectangle { x: 7; y: 17; width: 16; height: 2; color: paper }
                         Rectangle { x: 7; y: 21; width: 11; height: 2; color: paper }
                     }
-                    MouseArea {
-                        id: badgeArea
-                        anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; enabled: deck.loaded
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: win.showInsert(true)
-                        Accessible.role: Accessible.Button; Accessible.name: "Unfold the insert"
-                    }
                 }
                 Text { x: 62; y: 17; width: 498; text: win.mixtape ? (win.tape.name || "Untitled tape") : deck.filename; elide: Text.ElideMiddle; font.family: mono; font.pixelSize: 19; font.weight: Font.Bold; color: ink }
+                // So much lives in the insert that the whole title strip opens it; the side mark turning
+                // over under the pointer is the hint, not the target.
+                MouseArea {
+                    id: titleStrip
+                    width: parent.width; height: 52; hoverEnabled: true; enabled: deck.loaded
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: win.showInsert(true)
+                    Accessible.role: Accessible.Button; Accessible.name: "Unfold the insert"
+                }
                 Rectangle { x: 20; y: 52; width: 540; height: 1; color: inkDim; opacity: 0.55 }
                 Text { x: 20; y: 59; width: 390; text: !deck.loaded ? "Drop audio or a tape here, or press O to open one" : win.mixtape ? (win.tape.index + 1) + " of " + win.tape.tracks.length + "  ·  " + deck.filename : deck.detail; elide: Text.ElideRight; font.family: mono; font.pixelSize: 10; color: inkDim }
                 Text { x: 410; y: 58; width: 150; horizontalAlignment: Text.AlignRight; text: clock(deck.position) + " / " + clock(deck.duration); font.family: mono; font.pixelSize: 11; font.weight: Font.DemiBold; color: ink }
@@ -308,7 +310,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. Drag or scroll the grooves under the tape to set the volume. Click the A on the label to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. Drag or scroll the grooves under the tape to set the volume. Click the label's title strip to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }
