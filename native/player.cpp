@@ -88,6 +88,8 @@ QString Player::detail() const {
 void Player::openFile(const QString &file, bool paused, qint64 start, bool ignore, bool headLifted) {
     const auto result = core.request({{"op", "open"}, {"path", file}, {"start", start}, {"ignore", ignore}});
     if (result.contains("error")) { emit notice(result["error"].toString()); return; }
+    // Changing tapes lifts the head, and first: stopping a playing track must not look like it ran out.
+    deck = "stopped";
     media.stop();
     media.setSource(QUrl());
     path = result["path"].toString();
@@ -97,7 +99,6 @@ void Player::openFile(const QString &file, bool paused, qint64 start, bool ignor
     startPaused = paused;
     lifted = headLifted;
     loading = true;
-    deck = "stopped"; // changing tapes lifts the head
     // A track inside a tape plays from where it lies in the archive; nothing is unpacked.
     const auto span = result["held"].toObject();
     held.reset(span.isEmpty() ? nullptr : new Stretch(span["archive"].toString(), span["offset"].toInteger(), span["length"].toInteger()));
@@ -160,7 +161,9 @@ void Player::poll() {
 // Bring the track the core landed on under the head, playing or not.
 void Player::cue(const QJsonObject &landed, bool play) {
     const auto track = landed["path"].toString();
-    if (track.isEmpty() || track == path) { seek(0); if (play && !playing()) drive("play"); }
+    // The same file again, as on a single file or when one is listed twice running, starts over
+    // where it is. PLAY is a key that toggles, so a head already down is not pressed again.
+    if (track.isEmpty() || track == path) { seek(0); if (play && deck != "playing") drive("play"); else if (play) media.play(); }
     else openFile(track, !play, -1, true, !play && deck == "stopped");
     refreshTape();
 }

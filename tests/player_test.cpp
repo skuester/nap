@@ -127,6 +127,12 @@ private slots:
         p.seek(11850); QTRY_COMPARE_WITH_TIMEOUT(index(), 0, 5000); QTRY_VERIFY_WITH_TIMEOUT(p.playing(), 5000);
         p.toggleLoop(); p.stop();
 
+        // Changing track under a playing head is not the track running out: NEXT lands one on, and plays.
+        p.playTrack(0); QTRY_VERIFY(p.playing()); QTRY_COMPARE(p.duration(), 12000);
+        p.next(); QCOMPARE(index(), 1); QTRY_COMPARE(p.filename(), QString("Second.wav"));
+        QTRY_VERIFY_WITH_TIMEOUT(p.playing(), 5000); QCOMPARE(index(), 1);
+        p.stop(); p.previous(); QTRY_COMPARE(index(), 0); QTRY_COMPARE(p.filename(), first);
+
         p.renameTape("Test Mix"); p.signTape("Shane"); p.noteTape("Rewind before returning."); p.moveTrack(1, 0);
         QCOMPARE(files(), QStringList({"Second.wav", first})); QCOMPARE(index(), 1); QVERIFY(p.tape()["dirty"].toBool());
         p.setCover(QUrl::fromLocalFile(audio));
@@ -161,7 +167,9 @@ private slots:
         for (int i = 0; i < 24; ++i) if (p.spectrum()[i].toDouble() > p.spectrum()[loudest].toDouble()) loudest = i;
         QCOMPARE(loudest, 9);
         p.seek(500); QTRY_VERIFY_WITH_TIMEOUT(p.position() >= 500 && p.position() < 2000, 5000);
-        p.seek(11850); QTRY_VERIFY_WITH_TIMEOUT(p.stopped(), 5000);
+        // This tape lists one file twice running: run out, it plays again, and then the tape is over.
+        p.seek(11850); QTRY_COMPARE_WITH_TIMEOUT(index(), 1, 5000); QTRY_VERIFY_WITH_TIMEOUT(p.playing() && p.position() < 2000, 5000);
+        p.seek(11850); QTRY_VERIFY_WITH_TIMEOUT(p.stopped(), 5000); QCOMPARE(index(), 0);
         // It has nowhere of its own to keep a bookmark, and says so.
         p.saveBookmark(); QVERIFY(notices.last()[0].toString().contains("inside a tape")); QCOMPARE(p.bookmark(), -1);
         QDesktopServices::setUrlHandler("file", this, "openedUrl");
