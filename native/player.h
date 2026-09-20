@@ -80,6 +80,9 @@ public:
     Q_INVOKABLE void playTrack(int index);
     Q_INVOKABLE void moveTrack(int from, int to);
     Q_INVOKABLE void removeTrack(int index);
+    // Start side B at a track; asked of the track it already starts at, go back to one side.
+    Q_INVOKABLE void turnAt(int index) { edit({{"op", "edit"}, {"action", "side"}, {"index", index}}); }
+    Q_INVOKABLE void flip();
     Q_INVOKABLE void renameTape(const QString &name) { writeOnTape("name", name); }
     Q_INVOKABLE void signTape(const QString &from) { writeOnTape("from", from); }
     Q_INVOKABLE void noteTape(const QString &note) { writeOnTape("note", note); }

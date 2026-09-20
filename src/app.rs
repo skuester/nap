@@ -129,6 +129,7 @@ impl App {
             "track" => Ok(session.search(flag(request, "forward"), number(request, "position"))),
             "select" => session.select(number(request, "index").max(0) as usize),
             "ended" => Ok(session.ended(flag(request, "looping"))),
+            "flip" => session.flip(),
             "discard" => Ok(session.may_discard(request["action"].as_str().unwrap_or(""), std::time::Instant::now())),
             _ => return None,
         })

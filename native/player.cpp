@@ -25,6 +25,8 @@ Player::Player(QObject *parent) : QObject(parent) {
             const auto next = core.request({{"op", "ended"}, {"looping", repeat}});
             if (!next["play"].toBool()) drive("ended");
             if (trackCount() > 1) cue(next, next["play"].toBool());
+            // Side A running out stops the deck with side B turned up, and says so.
+            if (!next["notice"].toString().isEmpty()) emit notice(next["notice"].toString());
         }
         emit changed();
     });
@@ -166,6 +168,13 @@ void Player::cue(const QJsonObject &landed, bool play) {
     if (track.isEmpty() || track == path) { seek(0); if (play && deck != "playing") drive("play"); else if (play) media.play(); }
     else openFile(track, !play, -1, true, !play && deck == "stopped");
     refreshTape();
+}
+// Turn the tape over: the first track of the other side comes under the head, playing or not.
+void Player::flip() {
+    if (!loaded()) return;
+    const auto landed = core.request({{"op", "flip"}});
+    if (landed.contains("error")) { emit notice(landed["error"].toString()); return; }
+    cue(landed, deck == "playing");
 }
 void Player::playTrack(int index) {
     const auto landed = core.request({{"op", "select"}, {"index", index}});

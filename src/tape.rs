@@ -18,8 +18,11 @@
 //! #NAP-NOTE:Made this for the drive up.
 //! #NAP-NOTE:Side B is the good one.
 //!
+//! #NAP-SIDE:A
 //! #EXTINF:151,Boards of Canada - Roygbiv
 //! 01 Roygbiv.flac
+//!
+//! #NAP-SIDE:B
 //! #EXTINF:242,The Rapture - Don't Stop
 //! 02 Don't Stop.mp3
 //! ```
@@ -27,7 +30,8 @@
 //! `#NAP:` is the version of this format. `#NAP-FROM:` and `#NAP-NOTE:` are who made the tape and
 //! what they wrote to go with it, one `#NAP-NOTE:` per line. M3U has no such fields, and other
 //! players skip `#` lines they do not know. `#EXTINF:` is for those players, and for naming a
-//! track that has gone missing; nap itself reads titles and lengths from the audio.
+//! track that has gone missing; nap itself reads titles and lengths from the audio. A tape with
+//! two sides marks where each begins with `#NAP-SIDE:`; one without has a single side.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
@@ -152,6 +156,8 @@ pub struct Tape {
     pub note: String,
     pub cover: Option<Source>,
     pub tracks: Vec<Source>,
+    /// The first track of side B, on a tape that has two sides.
+    pub side_b: Option<usize>,
 }
 
 /// An index as read, before anyone has looked for the files it lists.
@@ -213,6 +219,9 @@ pub fn parse(text: &str, base: &Path) -> Result<Index, String> {
             tape.from = from.trim().to_owned();
         } else if let Some(note) = line.strip_prefix("#NAP-NOTE:") {
             tape.note = format!("{}\n{}", tape.note, note.trim()).trim_start_matches('\n').to_owned();
+        } else if let Some(side) = line.strip_prefix("#NAP-SIDE:") {
+            // Side A needs no marking: it is whatever comes before side B.
+            tape.side_b = tape.side_b.or((side.trim() == "B").then_some(tape.tracks.len()));
         } else if let Some(inf) = line.strip_prefix("#EXTINF:") {
             title = inf.split_once(',').map(|(_, title)| title.trim().to_owned()).filter(|title| !title.is_empty());
         } else if !line.starts_with('#') {
@@ -230,12 +239,18 @@ impl Index {
     fn settle(self, find: impl Fn(&Source) -> Option<Source>) -> (Tape, Vec<String>) {
         let mut tape = self.tape;
         let mut missing = Vec::new();
-        for (track, label) in std::mem::take(&mut tape.tracks).iter().zip(self.labels) {
+        let listed_b = tape.side_b.take();
+        for (at, (track, label)) in std::mem::take(&mut tape.tracks).iter().zip(self.labels).enumerate() {
+            // Side B starts at the same track however many before it have gone missing.
+            if listed_b == Some(at) {
+                tape.side_b = Some(tape.tracks.len());
+            }
             match find(track) {
                 Some(found) => tape.tracks.push(found),
                 None => missing.push(label),
             }
         }
+        tape.side_b = crate::transport::sided(tape.side_b, tape.tracks.len());
         tape.cover = tape.cover.as_ref().and_then(find);
         (tape, missing)
     }
@@ -271,7 +286,13 @@ pub fn render(tape: &Tape, cover: Option<&str>, entries: &[String], briefs: &[Br
         text += &format!("#NAP-NOTE:{}\n", line.trim_end());
     }
     text.push('\n');
+    let side_b = crate::transport::sided(tape.side_b, entries.len());
     for (at, entry) in entries.iter().enumerate() {
+        text += match side_b {
+            Some(_) if at == 0 => "#NAP-SIDE:A\n",
+            Some(first) if at == first => "\n#NAP-SIDE:B\n",
+            _ => "",
+        };
         text += &briefs.get(at).map(|brief| extinf(entry, brief)).unwrap_or_default();
         // Any other line starting with `#` is a comment, so a name that does is written as a path.
         text += if entry.starts_with('#') { "./" } else { "" };

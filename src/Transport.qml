@@ -34,6 +34,7 @@ Button {
         "next": { fill: "M1 4 L11 12 L1 20 Z M12 4 L22 12 L12 20 Z M23 4 h3 v16 h-3 Z" },
         "open": { fill: "M14 3 L25 15 L3 15 Z M3 18 h22 v3 h-22 Z" },
         "mark": { fill: "M8 3 h12 v18 l-6 -5 l-6 5 Z" },
+        "flip": { fill: "M2 12 L9 5.5 L9 18.5 Z M26 12 L19 5.5 L19 18.5 Z", line: "M13 3.5 v17 M15 3.5 v17" },
         "loop": { fill: "M23.2 9.8 L22.8 3.2 L16.5 9.5 Z", line: "M21.7 14.1 A8 8 0 1 1 19.7 6.3" }
     })
     readonly property var art: glyphs[glyph] || ({})

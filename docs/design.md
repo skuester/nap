@@ -28,6 +28,8 @@ was this, on a real tape?":
 | Stop vs. pause | The head lifting off the tape; REW/FWD then become track search |
 | Skipping tracks on a tape | A CD player's keys: tap to change track, hold to wind |
 | Saving an unsaved tape | The red REC key, taking OPEN's place because OPEN is what would discard it |
+| Two halves of a playlist | Sides A and B: the J-card numbers them A1, B1; the cassette turns over; a side running out stops the deck |
+| Turning the tape over | A FLIP key, taking MARK's place because a bookmark belongs to a single file |
 | A progress bar | The deck's own display, in the same 4px cells as the visualizers |
 | Tape length | The "C-60" class printed on every blank tape, computed from the real length |
 
@@ -104,6 +106,8 @@ Motion is physical and sparse. Things move because a mechanism would move them:
 - Reels turn only while playing, anticlockwise (side A), and the thinner pack turns faster because
   tape speed is constant. Held REW/FWD spins them fast the right way.
 - The insert rises, then its notes panel unfolds from the spine. One orchestrated moment.
+- The cassette turns over about its middle (an x-scale through edge-on, which stays affine), and
+  the side mark changes only at the instant it is edge-on.
 - Bars fall, caps hang then drop with acceleration, VU needles are lightly underdamped springs
   (about 300ms rise, a hint of overshoot), the tape counter's wheels roll and carry like an
   odometer and whirr on a seek.

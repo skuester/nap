@@ -40,6 +40,11 @@ Item {
     signal playRequested(int index)
     signal moveRequested(int from, int to)
     signal removeRequested(int index)
+    signal turnRequested(int index)
+    // The first track of side B, or -1 on a tape with one side.
+    readonly property int sideB: tape.sideB === undefined ? -1 : tape.sideB
+    // A J-card numbers a two-sided tape by side: A1, A2, B1.
+    function number(index) { return sideB < 0 ? String(index + 1).padStart(2, "0") : index < sideB ? "A" + (index + 1) : "B" + (index - sideB + 1) }
     readonly property var tracks: tape.tracks || []
     readonly property bool mixtape: tape.mixtape === true
     readonly property int current: tape.index || 0
@@ -290,12 +295,14 @@ Item {
                     readonly property bool up: index === insert.current
                     // The x sits on top of the row, so the pointer on it still counts as on the row;
                     // otherwise showing it would un-hover the row, hiding it again, and so on.
-                    readonly property bool hovered: hit.containsMouse || removeArea.containsMouse
+                    readonly property bool hovered: hit.containsMouse || removeArea.containsMouse || turnArea.containsMouse
                     width: listing.width; height: 21.5
                     Rectangle { anchors.fill: parent; radius: 2; color: Qt.alpha(insert.ink, index === insert.shown ? 0.13 : row.hovered ? 0.05 : 0) }
-                    Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: row.up ? "▶" : String(row.index + 1).padStart(2, "0"); font.family: insert.mono; font.pixelSize: row.up ? 8 : 10; color: row.up ? insert.ink : insert.inkDim }
+                    // Side B begins under a rule of its own.
+                    Rectangle { visible: row.index === insert.sideB; x: 6; width: parent.width - 12; height: 1; color: insert.ink; opacity: 0.7 }
+                    Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: row.up ? "▶" : insert.number(row.index); font.family: insert.mono; font.pixelSize: row.up ? 8 : 10; color: row.up ? insert.ink : insert.inkDim }
                     Text {
-                        x: 28; width: parent.width - 74; anchors.verticalCenter: parent.verticalCenter
+                        x: 28; width: parent.width - 74 - (turn.visible ? 14 : 0); anchors.verticalCenter: parent.verticalCenter
                         text: row.modelData.title || row.modelData.file; elide: Text.ElideRight
                         font.family: insert.mono; font.pixelSize: 10; font.weight: row.up ? Font.Bold : Font.Normal; color: insert.ink
                     }
@@ -322,6 +329,18 @@ Item {
                         onCanceled: { listing.dragFrom = -1; listing.dropAt = -1 }
                         onDoubleClicked: insert.playRequested(row.index)
                         onWheel: wheel => listing.contentY = Math.max(0, Math.min(Math.max(0, listing.contentHeight - listing.height), listing.contentY - wheel.angleDelta.y / 2))
+                    }
+                    // Beside the x, a B: start side B at this track. On the track it already starts at, it is
+                    // inked in, and a click there goes back to one side.
+                    Text {
+                        id: turn
+                        objectName: "turnAt" + row.index
+                        readonly property bool here: row.index === insert.sideB
+                        visible: row.hovered && row.index > 0 && listing.dragFrom < 0
+                        anchors.right: parent.right; anchors.rightMargin: 22; anchors.verticalCenter: parent.verticalCenter
+                        width: 14; horizontalAlignment: Text.AlignHCenter; text: "B"; font.family: insert.mono; font.pixelSize: 10; font.weight: here ? Font.Bold : Font.Normal
+                        color: here || turnArea.containsMouse ? insert.ink : insert.inkDim
+                        MouseArea { id: turnArea; anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: insert.turnRequested(row.index); Accessible.role: Accessible.Button; Accessible.name: turn.here ? "Back to one side" : "Start side B here" }
                     }
                     Text {
                         id: remove

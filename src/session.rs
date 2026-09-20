@@ -161,7 +161,8 @@ impl Session {
         let cover = self.tape.cover.as_ref();
         json!({"name": self.tape.name, "from": self.tape.from, "note": self.tape.note,
             "cover": cover.map(|cover| &cover.path), "coverHeld": cover.is_some_and(|cover| cover.span.is_some()),
-            "tracks": tracks, "index": self.index, "seconds": seconds, "dirty": self.dirty, "mixtape": mixtape})
+            "tracks": tracks, "index": self.index, "seconds": seconds, "dirty": self.dirty, "mixtape": mixtape,
+            "sideB": self.tape.side_b.map_or(-1, |first| first as i64), "side": self.side()})
     }
 
     /// A cover held inside the tape cannot be shown from a path, so it is handed over whole. It
@@ -181,6 +182,7 @@ impl Session {
             return Err("A tape needs at least one track".into());
         }
         self.tape.tracks.remove(at);
+        self.tape.side_b = transport::side_after_remove(self.tape.side_b, at, self.tape.tracks.len());
         let was_current = at == self.index;
         self.index = (self.index - usize::from(at < self.index)).min(self.tape.tracks.len() - 1);
         Ok(was_current)
@@ -194,8 +196,19 @@ impl Session {
         let playing = self.current().cloned();
         let track = self.tape.tracks.remove(from);
         self.tape.tracks.insert(to.min(last), track);
+        self.tape.side_b = transport::side_after_move(self.tape.side_b, from, to.min(last), last + 1);
         // Follow the track that is up to wherever it went.
         self.index = self.tape.tracks.iter().position(|t| Some(t) == playing.as_ref()).unwrap_or(self.index);
+        Ok(false)
+    }
+
+    /// Start side B at a track, or asked of the track it already starts at, go back to one side.
+    fn turn_at(&mut self, at: usize) -> Result<bool, String> {
+        let asked = Some(at).filter(|at| self.tape.side_b != Some(*at));
+        self.tape.side_b = transport::sided(asked, self.tape.tracks.len());
+        if asked.is_some() && self.tape.side_b.is_none() {
+            return Err("Side B needs a side A before it".into());
+        }
         Ok(false)
     }
 
@@ -215,6 +228,7 @@ impl Session {
             "remove" => self.remove(number("index"))?,
             "move" => self.reorder(number("from"), number("to"))?,
             "cover" => self.set_cover(request["path"].as_str().unwrap_or(""))?,
+            "side" => self.turn_at(number("index"))?,
             // Words written on the card: its name, who it is from, and the note that goes with it.
             field @ ("name" | "from" | "note") => {
                 let text = request["text"].as_str().unwrap_or("").trim().to_owned();
@@ -247,6 +261,22 @@ impl Session {
         json!({"allowed": false, "notice": format!("This tape is unsaved. {again} again to discard it, or press REC to save it.")})
     }
 
+    /// Which side is up, on a tape that has two.
+    fn side(&self) -> &'static str {
+        match self.tape.side_b {
+            None => "",
+            Some(first) if self.index < first => "A",
+            Some(_) => "B",
+        }
+    }
+
+    /// FLIP: turn the tape over, to the start of its other side.
+    pub fn flip(&mut self) -> Result<Value, String> {
+        let one_sided = "This tape has one side. Pick out a track in the insert and press F to start side B there";
+        self.index = transport::flipped(self.index, self.tape.side_b).ok_or(one_sided)?;
+        Ok(self.track(self.index))
+    }
+
     /// PREV or NEXT: move to the track it finds.
     pub fn search(&mut self, forward: bool, position: i64) -> Value {
         let count = self.tape.tracks.len();
@@ -265,10 +295,12 @@ impl Session {
 
     /// The track that is up ran out: what plays next, if anything.
     pub fn ended(&mut self, looping: bool) -> Value {
-        let (index, play) = transport::after_end(self.index, self.tape.tracks.len(), looping);
+        let (index, play) = transport::after_end(self.index, self.tape.tracks.len(), looping, self.tape.side_b);
+        let turned = !play && index > 0;
         self.index = index;
         let mut reply = self.track(index);
         reply["play"] = json!(play);
+        reply["notice"] = json!(if turned { "That was side A. Side B is up; press PLAY" } else { "" });
         reply
     }
 

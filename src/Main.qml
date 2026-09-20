@@ -39,6 +39,11 @@ ApplicationWindow {
     readonly property bool typing: jcard.typing
     readonly property var tape: deck.tape
     readonly property bool mixtape: tape.mixtape === true
+    // A tape with two sides: which is up, and the letter on the cassette, which changes only
+    // once the turn has brought the other face round.
+    readonly property string side: tape.side || ""
+    property string sideShown: "A"
+    onSideChanged: if ((side || "A") !== sideShown) turnOver.restart()
     property bool insertVisible: false
     property var insertCard: ({})
     // The insert is read from the file only once someone pulls it out.
@@ -75,6 +80,8 @@ ApplicationWindow {
     Shortcut { enabled: !win.typing && deck.loaded; sequence: "Ctrl+S"; onActivated: saver.open() }
     Shortcut { enabled: !win.typing && win.insertVisible && jcard.selected >= 0; sequences: ["Delete", "Backspace"]; onActivated: { const gone = jcard.selected; jcard.selected = -1; deck.removeTrack(gone) } }
     Shortcut { enabled: !win.typing; sequence: "I"; onActivated: win.showInsert(!win.insertVisible) }
+    // F is for the flip: it turns the tape over, or with a track picked out in the insert, puts the turn there.
+    Shortcut { enabled: !win.typing && deck.loaded; sequence: "F"; onActivated: win.insertVisible && jcard.selected > 0 ? deck.turnAt(jcard.selected) : deck.flip() }
     Shortcut { enabled: !win.typing; sequence: "B"; onActivated: deck.saveBookmark() }
     Shortcut { enabled: !win.typing; sequence: "Shift+B"; onActivated: deck.saveBookmark(true) }
     Shortcut { enabled: !win.typing; sequence: "Return"; onActivated: if (deck.bookmark >= 0) deck.seek(deck.bookmark) }
@@ -114,6 +121,14 @@ ApplicationWindow {
             id: cassette
             x: 40; y: 18; width: 640; height: 376; radius: 16
             color: shell; border.color: dropZone.containsDrag ? glow : Qt.alpha(fg, 0.26); border.width: dropZone.containsDrag ? 2 : 1
+            // Turning the tape over: edge-on at the middle of the turn, where the side mark changes.
+            transform: Scale { id: turn; origin.x: cassette.width / 2; xScale: 1 }
+            SequentialAnimation {
+                id: turnOver
+                NumberAnimation { target: turn; property: "xScale"; to: 0.02; duration: 130; easing.type: Easing.InCubic }
+                ScriptAction { script: win.sideShown = win.side || "A" }
+                NumberAnimation { target: turn; property: "xScale"; to: 1; duration: 160; easing.type: Easing.OutCubic }
+            }
             Rectangle { x: 4; y: 4; width: parent.width - 8; height: parent.height - 8; radius: 12; color: "transparent"; border.color: Qt.alpha(fg, 0.06) }
             Repeater {
                 model: [[15, 15, 30], [625, 15, -20], [15, 361, -55], [625, 361, 40], [320, 353, 10]]
@@ -137,7 +152,7 @@ ApplicationWindow {
                     readonly property bool turned: titleStrip.containsMouse && deck.loaded
                     x: 20; y: 16; width: 30; height: 30; radius: 3
                     color: turned ? ink : "transparent"; border.color: ink; border.width: 2
-                    Text { visible: !parent.turned; anchors.centerIn: parent; text: "A"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: ink }
+                    Text { objectName: "sideMark"; visible: !parent.turned; anchors.centerIn: parent; text: win.sideShown; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: ink }
                     Item {
                         anchors.fill: parent; visible: parent.turned
                         Rectangle { x: 7; y: 7; width: 7; height: 7; color: paper }
@@ -269,7 +284,9 @@ ApplicationWindow {
         Row {
             x: 524; y: 410; spacing: 6
             Transport { implicitWidth: 48; glyph: "loop"; caption: "LOOP"; ink: fg; face: shell; well: win.well; lamp: glow; hasLamp: true; lit: deck.looping; engaged: deck.looping; onClicked: deck.toggleLoop() }
-            Transport { implicitWidth: 48; glyph: "mark"; caption: "MARK"; ink: fg; face: shell; well: win.well; lamp: glow; hasLamp: true; lit: deck.bookmark >= 0; enabled: deck.loaded; onClicked: deck.saveBookmark() }
+            // A bookmark belongs to a single file, so on a tape with two sides this key turns it over
+            // instead; its lamp is lit while side B is up.
+            Transport { objectName: "markKey"; implicitWidth: 48; glyph: win.side ? "flip" : "mark"; caption: win.side ? "FLIP" : "MARK"; ink: fg; face: shell; well: win.well; lamp: glow; hasLamp: true; lit: win.side ? win.side === "B" : deck.bookmark >= 0; enabled: deck.loaded; onClicked: win.side ? deck.flip() : deck.saveBookmark() }
             Transport { implicitWidth: 48; glyph: "help"; caption: "KEYS"; ink: fg; face: shell; well: win.well; engaged: win.helpVisible; onClicked: win.helpVisible = true }
         }
         Insert {
@@ -288,6 +305,7 @@ ApplicationWindow {
             onPlayRequested: index => { selected = -1; deck.playTrack(index) }
             onMoveRequested: (from, to) => deck.moveTrack(from, to)
             onRemoveRequested: index => { selected = -1; deck.removeTrack(index) }
+            onTurnRequested: index => deck.turnAt(index)
             lengthClass: win.lengthClass
             paper: win.paper; ink: win.ink; inkDim: win.inkDim; stripe: win.stripe; scrim: Qt.alpha(bg, 0.88); mono: win.mono
             onDismissed: win.showInsert(false)
@@ -309,7 +327,7 @@ ApplicationWindow {
             scale: Math.min(1, (parent.height - 32) / implicitHeight)
             Text { text: "Keys"; font.family: mono; font.pixelSize: 18; font.weight: Font.Bold; color: fg; bottomPadding: 6 }
             Repeater {
-                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop where the tape is"], [", / .", "Previous / next track start"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["V", "Change the visualizer"], ["Ctrl+S", "Save the tape"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
+                model: [["Space", "Play or pause"], ["← / →", "Back or forward five seconds"], ["↑ / ↓", "Volume"], ["M", "Mute"], ["S", "Stop where the tape is"], [", / .", "Previous / next track start"], ["L", "Loop"], ["B", "Bookmark this spot"], ["Shift+B", "Remove the bookmark"], ["Enter", "Go to the bookmark"], ["I", "Unfold or put away the insert"], ["F", "Flip a two-sided tape over"], ["V", "Change the visualizer"], ["Ctrl+S", "Save the tape"], ["O", "Open a file"], ["?", "Show or hide these keys"], ["Q", "Quit"]]
                 Row {
                     required property var modelData
                     width: parent.width
@@ -317,7 +335,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. On a tape they are always PREV and NEXT: tap to change track, hold to wind. While a tape has unsaved changes OPEN becomes REC, which saves it; opening something else or quitting then has to be asked twice. Drag or scroll the grooves under the tape to set the volume. Click the label's title strip to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. On a tape they are always PREV and NEXT: tap to change track, hold to wind. While a tape has unsaved changes OPEN becomes REC, which saves it; opening something else or quitting then has to be asked twice. Drag or scroll the grooves under the tape to set the volume. Click the label's title strip to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it. The B beside a row's x starts side B at that track (so does F, with the row picked out); MARK then becomes FLIP, and side A running out stops the deck with side B turned up, unless LOOP is on."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }

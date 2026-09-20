@@ -90,6 +90,7 @@ The full installer requires an existing Hyprland Lua configuration, `xdg-mime`,
   While a mixtape has unsaved changes, OPEN is a red REC key that saves it (see [Mixtapes](#mixtapes)).
 - **Lower cassette ridges:** click, drag, or scroll to set the player's volume.
 - **LOOP / MARK:** toggle repeat or save your place. LOOP latches down; each key's lamp lights while it applies.
+  On a tape with two sides MARK is a FLIP key instead, which turns the tape over; its lamp is lit while side B is up.
 - **The label's title strip:** click anywhere on it (or press I) to unfold the insert; the A mark
   turns over under the pointer as the hint. It is a J-card with the
   embedded cover art, a spine, and liner notes listing the lyrics, every tag in the file
@@ -126,6 +127,7 @@ and AIFF; actual decoding support follows the installed Qt FFmpeg backend.
 | Shift+B | Remove bookmark |
 | Enter | Return to bookmark |
 | I | Unfold / put away the insert (↑ ↓ PgUp PgDn scroll it) |
+| F | Flip a two-sided tape over; with a track picked out in the insert, start side B there |
 | V | Change the visualizer |
 | Ctrl+S | Save the tape (.tape or .jcard) |
 | O / Ctrl+O | Open files, a tape, or a J-card |
@@ -153,6 +155,15 @@ once there is one it reads "Read the note", and whoever gets the tape finds it i
 On the slip, Enter starts a new line; Ctrl+Enter or a click elsewhere keeps it, and Esc gives it
 up. Click a cover picture to lift it off the card for a closer look too. Neither the picture nor
 the note ever lands quite straight; a click beside them or Esc puts them back.
+
+A tape can have two sides. Point at a track in the listing and click the B that appears beside
+its ×, or pick the track out and press F: side B starts there, under a rule of its own, and the
+card numbers its tracks the way J-cards do, A1, A2, B1. Click the same B again to go back to one
+side. Tracks dragged across the turn change sides, and the turn goes away by itself if either
+side is emptied. The side mark on the cassette's label says which side is up, and FLIP (or F)
+turns the tape over to the start of the other one, carrying on playing if it was. When side A
+runs out the deck stops, as a deck does, with side B turned up ready for PLAY; with LOOP on it is
+an auto-reverse deck and plays straight through.
 
 ![a mixtape's insert](docs/mixtape.png)
 
@@ -189,8 +200,11 @@ know are ignored. Inside a `.tape` the index can list only what the tape holds:
 #NAP-NOTE:Made this for the drive up.
 #NAP-NOTE:Side B is the good one.
 
+#NAP-SIDE:A
 #EXTINF:151,Boards of Canada - Roygbiv
 01 Roygbiv.flac
+
+#NAP-SIDE:B
 #EXTINF:242,The Rapture - Don't Stop
 02 Don't Stop.mp3
 /home/me/Music/03 far away.ogg
@@ -200,13 +214,15 @@ The `#NAP` lines are nap's own; M3U has no field for them, but players skip `#` 
 know, so the file stays a valid playlist. `#NAP:` is the version of the format, so that a later
 nap can tell an old tape from a broken one, and this one refuses a tape from a nap newer than
 itself rather than misread it. `#NAP-FROM:` is who signed the tape and `#NAP-NOTE:` what they
-wrote, one per line of the note. `#EXTENC:` and `#EXTINF:` (length in seconds, then artist and
+wrote, one per line of the note. `#NAP-SIDE:B` goes before the first track of side B on a tape
+that has two sides (`#NAP-SIDE:A` is written for symmetry; side A is whatever comes first).
+`#EXTENC:` and `#EXTINF:` (length in seconds, then artist and
 title) are for other players, which otherwise guess at the encoding and show file names; nap
 reads titles and lengths from the audio itself, and uses `#EXTINF:` only to name a track that
 has gone missing. A file whose own name starts with `#` is written as `./#name`, so it is not
 taken for a comment.
 
-On a tape, PREV and NEXT move between tracks and always wrap around. When the last track ends the
+On a tape, PREV and NEXT move between tracks, across sides too, and always wrap around. When the last track ends the
 deck auto-stops, cued back at track one; with LOOP on the tape starts over instead. Bookmarks
 belong to single files, so tracks on a tape always start at their beginning, and a track inside a
 `.tape` has no file of its own to keep one on.

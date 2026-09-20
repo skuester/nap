@@ -68,6 +68,33 @@ fn the_index_is_plain_m3u_text() {
 }
 
 #[test]
+fn a_tape_can_have_two_sides() {
+    let sided = Tape { name: "Sides".into(), side_b: Some(2), ..Tape::default() };
+    let entries: Vec<String> = ["a1.mp3", "a2.mp3", "b1.mp3"].map(Into::into).into();
+    let written = tape::render(&sided, None, &entries, &[]);
+    assert!(written.ends_with("\n\n#NAP-SIDE:A\na1.mp3\na2.mp3\n\n#NAP-SIDE:B\nb1.mp3\n"), "{written}");
+    assert_eq!(tape::parse(&written, Path::new("/t")).unwrap().tape.side_b, Some(2));
+    // A turn with nothing on one side of it is not written, and one side is read as one side.
+    let lopsided = tape::render(&Tape { side_b: Some(3), ..Tape::default() }, None, &entries, &[]);
+    assert!(!lopsided.contains("#NAP-SIDE"), "{lopsided}");
+    assert_eq!(tape::parse("#EXTM3U\n#NAP-SIDE:A\na.mp3\nb.mp3\n", Path::new("/t")).unwrap().tape.side_b, None);
+
+    // Side B still starts at the same track when ones before it have gone missing, and a side
+    // that has gone missing entirely leaves a tape with one.
+    let temp = tempfile::tempdir().unwrap();
+    for name in ["a2.ogg", "b1.ogg", "b2.ogg"] {
+        copy(temp.path(), "silence.ogg", name);
+    }
+    let card = temp.path().join("sides.jcard");
+    fs::write(&card, "#EXTM3U\n#NAP-SIDE:A\na1.ogg\na2.ogg\n#NAP-SIDE:B\nb1.ogg\ngone.ogg\nb2.ogg\n").unwrap();
+    let (read, missing) = tape::read_index(&card).unwrap();
+    assert_eq!((read.side_b, missing), (Some(1), vec!["a1.ogg".to_owned(), "gone.ogg".to_owned()]));
+    assert_eq!(paths(&read.tracks)[1], temp.path().join("b1.ogg"));
+    fs::write(&card, "#EXTM3U\ngone.ogg\n#NAP-SIDE:B\nb1.ogg\nb2.ogg\n").unwrap();
+    assert_eq!(tape::read_index(&card).unwrap().0.side_b, None);
+}
+
+#[test]
 fn a_name_starting_with_a_hash_is_still_a_track() {
     let written = tape::render(&Tape::default(), None, &["#1 Crush.mp3".into(), "plain.mp3".into()], &[]);
     assert!(written.ends_with("\n./#1 Crush.mp3\nplain.mp3\n"), "{written}");
@@ -336,13 +363,13 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
     // The last track ending stops the tape cued at its start, unless it loops.
     assert_eq!(
         ask(&mut app, json!({"op":"ended", "looping": false})),
-        json!({"index": 1, "path": temp.path().join("b.mp3"), "position": 0, "play": true})
+        json!({"index": 1, "path": temp.path().join("b.mp3"), "position": 0, "play": true, "notice": ""})
     );
     assert_eq!(ask(&mut app, json!({"op":"ended", "looping": false}))["play"], false);
     ask(&mut app, json!({"op":"select", "index": 1}));
     assert_eq!(
         ask(&mut app, json!({"op":"ended", "looping": true})),
-        json!({"index": 0, "path": temp.path().join("c.ogg"), "position": 0, "play": true})
+        json!({"index": 0, "path": temp.path().join("c.ogg"), "position": 0, "play": true, "notice": ""})
     );
 
     assert!(app.dispatch(&json!({"op":"export"})).is_err());
@@ -405,6 +432,52 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
     // A cover of the tape's own again, no longer held.
     ask(&mut app, json!({"op":"edit", "action":"cover", "path": temp.path().join("art.png")}));
     assert_eq!(ask(&mut app, json!({"op":"cover"}))["url"], "");
+
+    // Two sides: marked at a track, kept through edits, flipped between, and saved with the tape.
+    ask(
+        &mut app,
+        json!({"op":"load", "paths": [temp.path().join("a.flac"), temp.path().join("b.mp3"), temp.path().join("c.ogg")]}),
+    );
+    let tape = ask(&mut app, json!({"op":"tape"}));
+    assert_eq!((&tape["sideB"], &tape["side"]), (&json!(-1), &json!("")));
+    assert!(app.dispatch(&json!({"op":"flip"})).unwrap_err().starts_with("This tape has one side"));
+    assert_eq!(
+        app.dispatch(&json!({"op":"edit", "action":"side", "index": 0})).unwrap_err(),
+        "Side B needs a side A before it"
+    );
+    assert!(app.dispatch(&json!({"op":"edit", "action":"side", "index": 3})).is_err());
+    ask(&mut app, json!({"op":"edit", "action":"side", "index": 2}));
+    let tape = ask(&mut app, json!({"op":"tape"}));
+    assert_eq!((&tape["sideB"], &tape["side"], &tape["dirty"]), (&json!(2), &json!("A"), &json!(true)));
+    assert_eq!(ask(&mut app, json!({"op":"flip"}))["index"], 2);
+    assert_eq!(ask(&mut app, json!({"op":"tape"}))["side"], "B");
+    assert_eq!(ask(&mut app, json!({"op":"flip"}))["index"], 0);
+    // Side A runs out: the deck stops with side B up, and says so. Looping, it plays straight on.
+    ask(&mut app, json!({"op":"select", "index": 1}));
+    let ended = ask(&mut app, json!({"op":"ended", "looping": false}));
+    assert_eq!((&ended["index"], &ended["play"]), (&json!(2), &json!(false)));
+    assert_eq!(ended["notice"], "That was side A. Side B is up; press PLAY");
+    assert_eq!(
+        ask(&mut app, json!({"op":"ended", "looping": false}))["notice"],
+        "",
+        "the end of the tape is not a turn"
+    );
+    ask(&mut app, json!({"op":"select", "index": 1}));
+    let ended = ask(&mut app, json!({"op":"ended", "looping": true}));
+    assert_eq!((&ended["play"], &ended["notice"]), (&json!(true), &json!("")));
+    // Edits carry the turn with them.
+    ask(&mut app, json!({"op":"edit", "action":"move", "from": 0, "to": 2}));
+    assert_eq!(ask(&mut app, json!({"op":"tape"}))["sideB"], 1);
+    ask(&mut app, json!({"op":"export", "dest": temp.path().join("Sides.tape")}));
+    finish(&mut app);
+    ask(&mut app, json!({"op":"load", "paths": [temp.path().join("Sides.tape")]}));
+    let tape = ask(&mut app, json!({"op":"tape"}));
+    assert_eq!((files(&tape), &tape["sideB"]), (vec!["b.mp3", "c.ogg", "a.flac"], &json!(1)));
+    ask(&mut app, json!({"op":"edit", "action":"remove", "index": 0}));
+    assert_eq!(ask(&mut app, json!({"op":"tape"}))["sideB"], -1, "side A emptied leaves one side");
+    ask(&mut app, json!({"op":"edit", "action":"side", "index": 1}));
+    ask(&mut app, json!({"op":"edit", "action":"side", "index": 1}));
+    assert_eq!(ask(&mut app, json!({"op":"tape"}))["sideB"], -1, "asked of the track it starts at, back to one side");
 
     // A listing whose files have wandered off says which.
     fs::write(temp.path().join("list.jcard"), "#EXTM3U\n#EXTINF:3,Gone - Away\ngone.mp3\nlost.mp3\na.flac\n").unwrap();

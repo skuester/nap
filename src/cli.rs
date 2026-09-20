@@ -25,7 +25,7 @@ usage: nap [options] [audio... | mix.tape | mix.jcard]
 
 keys: Space play/pause; S stop; , . previous/next track; arrows seek/volume;
 B bookmark; Shift+B remove bookmark; Enter return to bookmark; L loop; M mute;
-V visualizer; I insert; Ctrl+S save the tape; O open; ? help; Q quit.
+V visualizer; I insert; F flip the tape; Ctrl+S save the tape; O open; ? help; Q quit.
 ";
 
 #[derive(Debug, Serialize)]

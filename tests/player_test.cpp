@@ -130,8 +130,20 @@ private slots:
         // Changing track under a playing head is not the track running out: NEXT lands one on, and plays.
         p.playTrack(0); QTRY_VERIFY(p.playing()); QTRY_COMPARE(p.duration(), 12000);
         p.next(); QCOMPARE(index(), 1); QTRY_COMPARE(p.filename(), QString("Second.wav"));
-        QTRY_VERIFY_WITH_TIMEOUT(p.playing(), 5000); QCOMPARE(index(), 1);
-        p.stop(); p.previous(); QTRY_COMPARE(index(), 0); QTRY_COMPARE(p.filename(), first);
+        QTRY_VERIFY_WITH_TIMEOUT(p.playing(), 5000); QCOMPARE(index(), 1); p.stop();
+        // Two sides: side A running out stops the deck with side B turned up; FLIP goes between them.
+        p.flip(); QVERIFY(notices.last()[0].toString().startsWith("This tape has one side"));
+        p.turnAt(1); QCOMPARE(p.tape()["sideB"].toInt(), 1); QCOMPARE(p.tape()["side"].toString(), QString("B"));
+        p.playTrack(0); QTRY_VERIFY(p.playing()); QCOMPARE(p.tape()["side"].toString(), QString("A"));
+        p.seek(11850); QTRY_VERIFY_WITH_TIMEOUT(p.stopped(), 5000); QTRY_COMPARE(index(), 1);
+        QCOMPARE(notices.last()[0].toString(), QString("That was side A. Side B is up; press PLAY"));
+        QCOMPARE(p.tape()["side"].toString(), QString("B")); QTRY_COMPARE(p.filename(), QString("Second.wav"));
+        p.flip(); QTRY_COMPARE(index(), 0); QVERIFY(p.stopped()); QCOMPARE(p.tape()["side"].toString(), QString("A"));
+        // Flipped while playing, it carries on playing.
+        QTRY_COMPARE(p.duration(), 12000); p.toggle(); QTRY_VERIFY(p.playing());
+        p.flip(); QTRY_COMPARE(index(), 1); QTRY_VERIFY_WITH_TIMEOUT(p.playing(), 5000);
+        p.stop(); p.flip(); QTRY_COMPARE(index(), 0); QTRY_COMPARE(p.filename(), first);
+        p.turnAt(1); QCOMPARE(p.tape()["sideB"].toInt(), -1);
 
         p.renameTape("Test Mix"); p.signTape("Shane"); p.noteTape("Rewind before returning."); p.moveTrack(1, 0);
         QCOMPARE(files(), QStringList({"Second.wav", first})); QCOMPARE(index(), 1); QVERIFY(p.tape()["dirty"].toBool());
@@ -326,6 +338,36 @@ private slots:
         QVERIFY(refusals.last()[0].toString().startsWith("This tape is unsaved. Open again"));
         QVERIFY(!p.mayQuit()); QVERIFY(refusals.last()[0].toString().startsWith("This tape is unsaved. Quit again"));
         QVERIFY(p.mayQuit());
+        // A tape with two sides: the B beside a row's x starts side B there, the side mark and the
+        // MARK key follow, and F turns the tape over, or with a row picked out moves the turn.
+        auto *markKey = w->findChild<QQuickItem *>("markKey"); QVERIFY(markKey);
+        auto *sideMark = w->findChild<QQuickItem *>("sideMark"); QVERIFY(sideMark);
+        QCOMPARE(markKey->property("caption").toString(), QString("MARK"));
+        QQuickItem *turnHere = nullptr;
+        QTRY_VERIFY((turnHere = visualChild(w->contentItem(), "turnAt1")));
+        QVERIFY(!visualChild(w->contentItem(), "turnAt0")->isVisible());
+        const auto onTurn = turnHere->mapToScene(QPointF(7, 7)).toPoint();
+        QTest::mouseMove(w, onTurn - QPoint(120, 0)); QTRY_VERIFY(turnHere->isVisible());
+        QTest::mouseMove(w, onTurn); QTest::qWait(60); QVERIFY(turnHere->isVisible());
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, onTurn);
+        QCOMPARE(p.tape()["sideB"].toInt(), 1); QCOMPARE(card->property("sideB").toInt(), 1);
+        QCOMPARE(markKey->property("caption").toString(), QString("FLIP")); QVERIFY(!markKey->property("lit").toBool());
+        QVariant numbered; QVERIFY(QMetaObject::invokeMethod(card, "number", Q_RETURN_ARG(QVariant, numbered), Q_ARG(QVariant, 1)));
+        QCOMPARE(numbered.toString(), QString("B1"));
+        QTest::qWait(50); QVERIFY(w->grabWindow().save("build/sides-preview.png"));
+        card->setProperty("selected", -1);
+        QTest::keyClick(w, Qt::Key_F); QTRY_COMPARE(p.tape()["side"].toString(), QString("B"));
+        QVERIFY(markKey->property("lit").toBool());
+        // The letter on the cassette changes only once the turn has brought the other face round.
+        QTRY_COMPARE(sideMark->property("text").toString(), QString("B"));
+        // The key is on the deck, so the insert is put away to reach it.
+        QTest::keyClick(w, Qt::Key_I); QTest::qWait(250);
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, markKey->mapToScene(QPointF(24, 40)).toPoint());
+        QTRY_COMPARE(p.tape()["side"].toString(), QString("A")); QTRY_COMPARE(sideMark->property("text").toString(), QString("A"));
+        QTest::keyClick(w, Qt::Key_I); QTest::qWait(500);
+        card->setProperty("selected", 1); QTest::keyClick(w, Qt::Key_F);
+        QCOMPARE(p.tape()["sideB"].toInt(), -1); QCOMPARE(markKey->property("caption").toString(), QString("MARK"));
+        card->setProperty("selected", -1);
         // A row's x appears under the pointer and stays put while the pointer moves onto it.
         p.openUrls({QUrl::fromLocalFile(flip)}, true); QCOMPARE(p.tape()["tracks"].toList().size(), 3);
         QQuickItem *cross = nullptr;
