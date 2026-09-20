@@ -425,6 +425,15 @@ private slots:
         QCOMPARE(w->minimumWidth() * 504, w->minimumHeight() * 720);
         QTest::keyClick(w, Qt::Key_K);
         QVERIFY(!w->grabWindow().isNull());
+        QTest::keyClick(w, Qt::Key_K);
+        // Q on an unsaved tape only warns; Q again really does quit, closing the window. The window
+        // closing asks too, and that must not count as a third, fresh request.
+        QVERIFY(p.tape()["dirty"].toBool()); QSignalSpy asked(&p, &Player::notice); QSignalSpy quits(&engine, &QQmlEngine::quit);
+        QTest::keyClick(w, Qt::Key_Q); QCOMPARE(quits.count(), 0); QCOMPARE(asked.count(), 1);
+        QVERIFY(asked.last()[0].toString().startsWith("This tape is unsaved. Quit again"));
+        QTest::keyClick(w, Qt::Key_Q); QCOMPARE(quits.count(), 1);
+        // Quitting closes the window (here by hand: nothing quits inside a test run).
+        QVERIFY(w->close()); QVERIFY(!w->isVisible()); QCOMPARE(asked.count(), 1);
         QCOMPARE(warnings.count(), 0);
     }
 };

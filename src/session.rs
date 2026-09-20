@@ -15,6 +15,9 @@ use std::time::{Duration, Instant};
 
 /// How long a warning about unsaved work waits for the same thing to be asked again.
 pub const SECOND_THOUGHTS: Duration = Duration::from_secs(6);
+/// How long an agreement to quit stands. Quitting is asked more than once on the way out (the
+/// key, then the window closing because of it), and the answer must not change in between.
+pub const WAY_OUT: Duration = Duration::from_secs(1);
 
 struct Job {
     label: String,
@@ -40,6 +43,8 @@ pub struct Session {
     cover: Option<(PathBuf, String)>,
     /// What was last refused because the tape is unsaved, and when.
     warned: Option<(String, Instant)>,
+    /// When quitting was last agreed to.
+    leaving: Option<Instant>,
 }
 
 fn paths(request: &Value) -> Vec<PathBuf> {
@@ -317,7 +322,9 @@ impl Session {
             .warned
             .take()
             .is_some_and(|(what, when)| what == action && now.duration_since(when) <= SECOND_THOUGHTS);
-        if !self.dirty || asked_twice {
+        let leaving = action == "quit" && self.leaving.is_some_and(|agreed| now.duration_since(agreed) <= WAY_OUT);
+        if !self.dirty || asked_twice || leaving {
+            self.leaving = (action == "quit").then_some(now);
             return json!({"allowed": true, "notice": ""});
         }
         self.warned = Some((action.to_owned(), now));

@@ -613,6 +613,17 @@ fn unsaved_work_is_given_up_only_by_asking_twice() {
     assert!(!allowed(session.may_discard("open", now + Duration::from_secs(21))));
     assert!(allowed(session.may_discard("open", now + Duration::from_secs(22))));
 
+    // Quitting, once agreed to, stays agreed for the moment it takes: the window closing because
+    // of it asks again. Only quitting, and not for long: a quit that never happened starts over.
+    use nap::session::WAY_OUT;
+    let agreed = now + Duration::from_secs(41);
+    assert!(!allowed(session.may_discard("quit", now + Duration::from_secs(40))));
+    assert!(allowed(session.may_discard("quit", agreed)));
+    assert!(allowed(session.may_discard("quit", agreed + WAY_OUT)));
+    assert!(!allowed(session.may_discard("open", agreed + WAY_OUT)));
+    assert!(allowed(session.may_discard("quit", agreed + WAY_OUT)), "asking to open does not take it back");
+    assert!(!allowed(session.may_discard("quit", agreed + WAY_OUT * 2 + Duration::from_millis(1))));
+
     let mut app = App::default();
     assert_eq!(ask(&mut app, json!({"op":"discard", "action":"quit"}))["allowed"], true);
 }
