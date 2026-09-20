@@ -15,6 +15,11 @@ Button {
     property bool hasLamp: false
     property bool lit: false
     property int seekDirection: 0
+    // On a tape the wind keys work like a CD player's: a tap is for the owner's onClicked (track
+    // search), and only a hold winds. `wound` tells that click handler a hold already did its work.
+    property bool trackSearch: false
+    property bool wound: false
+    readonly property bool winding: down && seekDirection !== 0 && (!trackSearch || wound)
     signal wind(int seconds)
     readonly property bool sunk: down || engaged
     // Icons live in a 28x24 box; "line" is stroked, "fill" is solid.
@@ -70,9 +75,10 @@ Button {
             }
         }
     }
-    onPressed: if (seekDirection) { wind(seekDirection * 5); delay.restart() }
+    // Every press starts fresh: a hold that wound the tape must not swallow the tap after it.
+    onPressed: { wound = false; if (seekDirection) { if (!trackSearch) wind(seekDirection * 5); delay.restart() } }
     onReleased: { delay.stop(); repeat.stop() }
     onCanceled: { delay.stop(); repeat.stop() }
-    Timer { id: delay; interval: 350; onTriggered: if (key.down) repeat.start() }
+    Timer { id: delay; interval: 350; onTriggered: if (key.down) { key.wound = true; repeat.start() } }
     Timer { id: repeat; interval: 100; repeat: true; onTriggered: if (key.down) key.wind(key.seekDirection * 2); else stop() }
 }

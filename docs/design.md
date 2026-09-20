@@ -26,6 +26,7 @@ was this, on a real tape?":
 | Looking closely at cover art | Lifting the print off the card; it never lands quite straight |
 | Level meters | VU needles on paper dials; a deck's LED ladder and rolling tape counter |
 | Stop vs. pause | The head lifting off the tape; REW/FWD then become track search |
+| Skipping tracks on a tape | A CD player's keys: tap to change track, hold to wind |
 | A progress bar | The deck's own display, in the same 4px cells as the visualizers |
 | Tape length | The "C-60" class printed on every blank tape, computed from the real length |
 

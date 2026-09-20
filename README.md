@@ -77,6 +77,8 @@ The full installer requires an existing Hyprland Lua configuration and `xdg-mime
 
 - **Label's ruled line:** click or drag to seek; it inks over as the tape plays. A small diamond marks your bookmark.
 - **REW / FWD:** tap to skip five seconds; hold to wind at 20 audio seconds per second.
+  On a tape they are PREV / NEXT instead, the way a CD player's keys work: tap to change track
+  (playing carries on playing), hold to wind through the current one.
 - **PLAY / PAUSE, STOP, OPEN:** physical-style keys that follow a real deck's mechanism. PLAY is lit only
   while the head is engaged (playing or paused). STOP lifts the head and leaves the tape where it is;
   REW and FWD then become PREV and NEXT, which find the start of a track (on a single file, its beginning).

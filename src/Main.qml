@@ -30,7 +30,9 @@ ApplicationWindow {
     // Tapes are sold by their length in minutes: a C-60, a C-90.
     readonly property real tapeSeconds: mixtape ? (tape.seconds || 0) : deck.duration / 1000
     readonly property string lengthClass: tapeSeconds > 0 ? "C-" + Math.max(1, Math.round(tapeSeconds / 60)) : ""
-    readonly property int winding: forwardKey.down ? 1 : rewindKey.down ? -1 : 0
+    readonly property int winding: forwardKey.winding ? 1 : rewindKey.winding ? -1 : 0
+    // With several tracks, changing track is what the wind keys are mostly for.
+    readonly property bool trackKeys: mixtape && tape.tracks.length > 1
     property bool helpVisible: false
     readonly property bool typing: jcard.typing
     readonly property var tape: deck.tape
@@ -251,11 +253,12 @@ ApplicationWindow {
 
         Row {
             x: 40; y: 410; spacing: 6
-            // While the head is on the tape these wind it; with the head lifted they search for track starts.
-            Transport { id: rewindKey; glyph: deck.stopped ? "prev" : "rew"; caption: deck.stopped ? "PREV" : "REW"; seekDirection: deck.stopped ? 0 : -1; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onWind: seconds => deck.skip(seconds); onClicked: if (deck.stopped) deck.previous() }
+            // On one file these wind it, and search for its start once the head is lifted. On a tape
+            // they are track keys, as on a CD player: a tap changes track, a hold still winds.
+            Transport { id: rewindKey; objectName: "rewindKey"; glyph: deck.stopped || win.trackKeys ? "prev" : "rew"; caption: deck.stopped || win.trackKeys ? "PREV" : "REW"; seekDirection: deck.stopped ? 0 : -1; trackSearch: win.trackKeys; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onWind: seconds => deck.skip(seconds); onClicked: if ((deck.stopped || win.trackKeys) && !wound) deck.previous() }
             // Lit only while the head is engaged: playing, or held in pause.
             Transport { objectName: "playKey"; glyph: deck.playing ? "pause" : "play"; caption: deck.playing ? "PAUSE" : "PLAY"; ink: deck.stopped ? fg : accentInk; face: deck.stopped ? shell : accent; well: win.well; engaged: deck.playing; onClicked: deck.loaded ? deck.toggle() : win.open() }
-            Transport { id: forwardKey; objectName: "forwardKey"; glyph: deck.stopped ? "next" : "fwd"; caption: deck.stopped ? "NEXT" : "FWD"; seekDirection: deck.stopped ? 0 : 1; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onWind: seconds => deck.skip(seconds); onClicked: if (deck.stopped) deck.next() }
+            Transport { id: forwardKey; objectName: "forwardKey"; glyph: deck.stopped || win.trackKeys ? "next" : "fwd"; caption: deck.stopped || win.trackKeys ? "NEXT" : "FWD"; seekDirection: deck.stopped ? 0 : 1; trackSearch: win.trackKeys; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onWind: seconds => deck.skip(seconds); onClicked: if ((deck.stopped || win.trackKeys) && !wound) deck.next() }
             Transport { glyph: "stop"; caption: "STOP"; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onClicked: deck.stop() }
             Transport { glyph: "open"; caption: "OPEN"; ink: fg; face: shell; well: win.well; onClicked: win.open() }
         }
@@ -310,7 +313,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. Drag or scroll the grooves under the tape to set the volume. Click the label's title strip to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. On a tape they are always PREV and NEXT: tap to change track, hold to wind. Drag or scroll the grooves under the tape to set the volume. Click the label's title strip to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }

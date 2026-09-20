@@ -212,6 +212,21 @@ private slots:
         // The insert as a mixtape's track listing: pick a row out, retitle the tape, remove a track.
         const QString flip = directory.filePath("Flip side.wav"); QVERIFY(QFile::copy(audio, flip));
         p.load({audio, flip}, true); QTRY_COMPARE(p.duration(), 12000);
+        // On a tape the wind keys change track on a tap, even with the head down, and still wind on a hold.
+        QVERIFY(!p.stopped()); QCOMPARE(forward->property("caption").toString(), QString("NEXT"));
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, point);
+        // Both tracks are the same length, so wait on the name and give the new file time to load.
+        QTRY_COMPARE(p.tape()["index"].toInt(), 1); QTRY_COMPARE(p.filename(), QString("Flip side.wav"));
+        QTest::qWait(400); QCOMPARE(p.duration(), 12000); QCOMPARE(p.position(), 0);
+        QTest::mousePress(w, Qt::LeftButton, Qt::NoModifier, point); QTest::qWait(620);
+        QTest::mouseRelease(w, Qt::LeftButton, Qt::NoModifier, point);
+        QVERIFY(p.position() >= 4000); QCOMPARE(p.tape()["index"].toInt(), 1);
+        auto *rewind = w->findChild<QQuickItem *>("rewindKey"); QVERIFY(rewind);
+        const auto back = rewind->mapToScene(QPointF(40, 40)).toPoint();
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, back);
+        QCOMPARE(p.position(), 0); QCOMPARE(p.tape()["index"].toInt(), 1);
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, back);
+        QTRY_COMPARE(p.tape()["index"].toInt(), 0); QTest::qWait(400); QCOMPARE(p.duration(), 12000);
         QTest::keyClick(w, Qt::Key_I); QTest::qWait(700);
         auto *card = w->findChild<QQuickItem *>("jcard"); QVERIFY(card);
         card->setProperty("selected", 1);
