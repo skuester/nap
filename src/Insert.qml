@@ -30,9 +30,11 @@ Item {
     // Something lifted off the card for a closer look: the cover, or the note tucked in with the
     // tape. Neither ever lands quite straight.
     property string held: ""
+    // What was lifted last, so the right sheet is the one seen fading as it is put back.
+    property string lifting: ""
     readonly property bool zoomed: held !== ""
     property real tilt: 0
-    function lift(what) { tilt = (1 + Math.random() * 1.6) * (Math.random() < 0.5 ? -1 : 1); held = what }
+    function lift(what) { tilt = (1 + Math.random() * 1.6) * (Math.random() < 0.5 ? -1 : 1); lifting = what; held = what }
     function zoom() { lift("cover") }
     function putBack() { if (writing) writing.end(true); held = "" }
     signal playRequested(int index)
@@ -129,7 +131,7 @@ Item {
             readonly property real side: Math.min(parent.width, parent.height) - 96
             // Kept to the picture's own shape, within the square the card allows.
             readonly property real shape: closeUp.implicitWidth > 0 ? closeUp.implicitHeight / closeUp.implicitWidth : 1
-            visible: insert.held !== "note"
+            visible: insert.lifting === "cover"
             anchors.centerIn: parent; anchors.verticalCenterOffset: insert.zoomed ? 0 : 14
             width: (shape > 1 ? side / shape : side) + 20; height: (shape > 1 ? side : side * shape) + 20
             rotation: insert.tilt; scale: insert.zoomed ? 1 : 0.94; antialiasing: true
@@ -146,7 +148,7 @@ Item {
         }
         Rectangle {
             id: slip
-            visible: insert.held === "note"
+            visible: insert.lifting === "note"
             anchors.centerIn: parent; anchors.verticalCenterOffset: insert.zoomed ? 0 : 14
             width: 400; height: Math.max(220, Math.min(400, words.implicitHeight + 96))
             rotation: insert.tilt; scale: insert.zoomed ? 1 : 0.94; antialiasing: true
@@ -286,8 +288,11 @@ Item {
                     required property int index
                     required property var modelData
                     readonly property bool up: index === insert.current
+                    // The x sits on top of the row, so the pointer on it still counts as on the row;
+                    // otherwise showing it would un-hover the row, hiding it again, and so on.
+                    readonly property bool hovered: hit.containsMouse || removeArea.containsMouse
                     width: listing.width; height: 21.5
-                    Rectangle { anchors.fill: parent; radius: 2; color: Qt.alpha(insert.ink, index === insert.shown ? 0.13 : hit.containsMouse ? 0.05 : 0) }
+                    Rectangle { anchors.fill: parent; radius: 2; color: Qt.alpha(insert.ink, index === insert.shown ? 0.13 : row.hovered ? 0.05 : 0) }
                     Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: row.up ? "▶" : String(row.index + 1).padStart(2, "0"); font.family: insert.mono; font.pixelSize: row.up ? 8 : 10; color: row.up ? insert.ink : insert.inkDim }
                     Text {
                         x: 28; width: parent.width - 74; anchors.verticalCenter: parent.verticalCenter
@@ -320,7 +325,8 @@ Item {
                     }
                     Text {
                         id: remove
-                        visible: hit.containsMouse && insert.tracks.length > 1 && listing.dragFrom < 0
+                        objectName: "removeTrack" + row.index
+                        visible: row.hovered && insert.tracks.length > 1 && listing.dragFrom < 0
                         anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
                         width: 16; horizontalAlignment: Text.AlignHCenter; text: "×"; font.family: insert.mono; font.pixelSize: 13; color: removeArea.containsMouse ? insert.ink : insert.inkDim
                         MouseArea { id: removeArea; anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: insert.removeRequested(row.index); Accessible.role: Accessible.Button; Accessible.name: "Remove from the tape" }

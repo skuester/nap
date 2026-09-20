@@ -10,6 +10,13 @@
 #include <QDesktopServices>
 #include <cmath>
 
+// List rows live in the visual tree only, which QObject::findChild does not walk.
+static QQuickItem *visualChild(QQuickItem *root, const QString &name) {
+    if (root->objectName() == name) return root;
+    for (auto *child : root->childItems()) if (auto *found = visualChild(child, name)) return found;
+    return nullptr;
+}
+
 class PlayerTest : public QObject {
     Q_OBJECT
     QTemporaryDir directory;
@@ -231,7 +238,20 @@ private slots:
         QVERIFY(w->grabWindow().save("build/note-preview.png"));
         QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, QPoint(12, 12));
         QVERIFY(!card->property("zoomed").toBool()); QVERIFY(w->property("insertVisible").toBool());
+        // While it fades away it is still the note that shows, never a flash of the cover.
+        QCOMPARE(card->property("lifting").toString(), QString("note"));
         QTest::qWait(50); QVERIFY(w->grabWindow().save("build/mixtape-preview.png"));
+        // A row's x appears under the pointer and stays put while the pointer moves onto it.
+        p.openUrls({QUrl::fromLocalFile(flip)}, true); QCOMPARE(p.tape()["tracks"].toList().size(), 3);
+        QQuickItem *cross = nullptr;
+        QTRY_VERIFY((cross = visualChild(w->contentItem(), "removeTrack2")));
+        const auto onCross = cross->mapToScene(QPointF(8, 8)).toPoint();
+        QTest::mouseMove(w, onCross - QPoint(120, 0)); QTRY_VERIFY(cross->isVisible());
+        QTest::mouseMove(w, onCross); QTest::qWait(60); QVERIFY(cross->isVisible());
+        QTest::mouseClick(w, Qt::LeftButton, Qt::NoModifier, onCross);
+        QCOMPARE(p.tape()["tracks"].toList().size(), 2); QCOMPARE(card->property("selected").toInt(), -1);
+        // Delete takes away whichever row is picked out.
+        card->setProperty("selected", 1);
         QTest::keyClick(w, Qt::Key_Delete); QCOMPARE(p.tape()["tracks"].toList().size(), 1);
         QCOMPARE(card->property("selected").toInt(), -1);
         QTest::keyClick(w, Qt::Key_I); QVERIFY(!w->property("insertVisible").toBool());
