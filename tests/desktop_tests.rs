@@ -14,10 +14,46 @@ impl MimeBackend for FakeMime {
         self.0.borrow_mut().insert(mime.into(), handler.into());
         Ok(())
     }
-    fn refresh(&self, mime_dir: &std::path::Path) -> Result<(), String> {
-        self.1.borrow_mut().push(mime_dir.into());
+    fn refresh(&self, share: &std::path::Path) -> Result<(), String> {
+        self.1.borrow_mut().push(share.into());
         Ok(())
     }
+}
+/// Answers like the real xdg-mime: for a type with nothing recorded it names whichever desktop
+/// entry claims the type, which for nap's own types is nap itself.
+#[derive(Default)]
+struct GuessingMime(RefCell<BTreeMap<String, String>>);
+impl MimeBackend for GuessingMime {
+    fn current(&self, mime: &str) -> Result<String, String> {
+        let guess = if mime.starts_with("application/x-nap-") { "nap.desktop" } else { "" };
+        Ok(self.0.borrow().get(mime).cloned().unwrap_or(guess.into()))
+    }
+    fn set(&self, mime: &str, handler: &str) -> Result<(), String> {
+        match handler {
+            "" => self.0.borrow_mut().remove(mime),
+            handler => self.0.borrow_mut().insert(mime.into(), handler.into()),
+        };
+        Ok(())
+    }
+    fn refresh(&self, _: &std::path::Path) -> Result<(), String> {
+        Ok(())
+    }
+}
+#[test]
+fn defaults_are_written_down_even_when_a_query_already_names_nap() {
+    // A file manager reads the record, not the guess: without one it opened a .tape as an archive.
+    let temp = tempfile::tempdir().unwrap();
+    let state = temp.path().join("previous.json");
+    let backend = GuessingMime::default();
+    desktop::install_mimes(&backend, &state).unwrap();
+    for mime in MIME_TYPES {
+        assert_eq!(backend.0.borrow().get(*mime).map(String::as_str), Some("nap.desktop"), "{mime}");
+    }
+    // Nothing handled nap's own types before nap, so they are not recorded as displaced...
+    assert!(!fs::read_to_string(&state).unwrap().contains("x-nap"));
+    // ...and uninstalling forgets them rather than leaving nap named for a type it no longer opens.
+    desktop::uninstall_mimes(&backend, &state).unwrap();
+    assert!(backend.0.borrow().keys().all(|mime| !mime.contains("x-nap")), "{:?}", backend.0.borrow());
 }
 #[test]
 fn repeated_install_preserves_defaults_and_uninstall_respects_later_choices() {
@@ -57,7 +93,7 @@ fn installation_links_checkout_and_uninstalls_cleanly() {
     assert_eq!(fs::read_link(config.join("hypr/nap.lua")).unwrap(), checkout.join("hypr/nap.lua"));
     // nap's own file types are defined, the database rebuilt, and nap made their default.
     assert_eq!(fs::read_link(prefix.join(desktop::MIME_PACKAGE)).unwrap(), checkout.join("nap-mime.xml"));
-    assert_eq!(*backend.1.borrow(), vec![prefix.join("share/mime"); 2]);
+    assert_eq!(*backend.1.borrow(), vec![prefix.join("share"); 2]);
     assert_eq!(backend.current("application/x-nap-tape").unwrap(), "nap.desktop");
     assert_eq!(backend.current("application/x-nap-jcard").unwrap(), "nap.desktop");
     let text = fs::read_to_string(config.join("hypr/hyprland.lua")).unwrap();
@@ -120,19 +156,23 @@ fn xdg_mime_is_driven_through_its_command_line() {
     let logging = |name: &str, extra: &str| {
         script(temp.path(), name, &format!("echo \"$@\" >> '{}'\n{extra}\nexit 0", log.display()))
     };
-    let tools = |program: std::path::PathBuf, database_program: std::path::PathBuf| desktop::XdgMime {
+    let tools = |program: &std::path::Path, database: &std::path::Path| desktop::XdgMime {
         config: temp.path().into(),
-        program,
-        database_program,
+        program: program.into(),
+        database_program: database.into(),
+        desktop_database_program: database.into(),
     };
-    let mime =
-        tools(logging("xdg-mime", "[ \"$1\" = query ] && echo ' other.desktop '"), logging("update-mime-database", ""));
+    let query = logging("xdg-mime", "[ \"$1\" = query ] && echo ' other.desktop '");
+    let mime = tools(&query, &logging("update-database", ""));
     assert_eq!(mime.current("audio/flac").unwrap(), "other.desktop");
     mime.set("audio/flac", "nap.desktop").unwrap();
-    mime.refresh(&temp.path().join("share/mime")).unwrap();
+    // Both caches are rebuilt: what a .tape is, and that nap opens one.
+    mime.refresh(&temp.path().join("share")).unwrap();
+    let share = temp.path().join("share");
     let calls = format!(
-        "query default audio/flac\ndefault nap.desktop audio/flac\n{}\n",
-        temp.path().join("share/mime").display()
+        "query default audio/flac\ndefault nap.desktop audio/flac\n{}\n{}\n",
+        share.join("mime").display(),
+        share.join("applications").display()
     );
     assert_eq!(fs::read_to_string(&log).unwrap(), calls);
 
@@ -144,18 +184,16 @@ fn xdg_mime_is_driven_through_its_command_line() {
     assert_eq!(fs::read_to_string(&list).unwrap(), "[Default Applications]\naudio/mpeg=other.desktop\n");
 
     let broken = script(temp.path(), "broken", "echo nope >&2; exit 3");
-    let failing = tools(broken.clone(), broken);
+    let failing = tools(&broken, &broken);
     assert_eq!(failing.current("audio/flac").unwrap_err().trim(), "nope");
     assert_eq!(failing.set("audio/flac", "nap.desktop").unwrap_err(), "xdg-mime failed for audio/flac");
-    assert_eq!(failing.refresh(temp.path()).unwrap_err(), "update-mime-database failed");
-    let missing = tools(temp.path().join("absent"), temp.path().join("absent"));
+    assert_eq!(failing.refresh(temp.path()).unwrap_err(), "broken failed");
+    let missing = tools(&temp.path().join("absent"), &temp.path().join("absent"));
     assert!(missing.current("audio/flac").is_err() && missing.set("audio/flac", "nap.desktop").is_err());
-    assert!(missing.refresh(temp.path()).unwrap_err().starts_with("update-mime-database: "));
+    assert!(missing.refresh(temp.path()).unwrap_err().starts_with("absent: "));
     let real = desktop::XdgMime::new(temp.path().into());
-    assert_eq!(
-        (real.program.to_str(), real.database_program.to_str()),
-        (Some("xdg-mime"), Some("update-mime-database"))
-    );
+    let programs = [&real.program, &real.database_program, &real.desktop_database_program].map(|p| p.to_str().unwrap());
+    assert_eq!(programs, ["xdg-mime", "update-mime-database", "update-desktop-database"]);
 }
 
 #[test]

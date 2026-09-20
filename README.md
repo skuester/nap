@@ -20,7 +20,8 @@ Requires Linux, a Rust toolchain, a C++17 compiler, Make, pkg-config, and Qt **6
 Quick Controls, Dialogs, and the FFmpeg Multimedia backend. On Arch the relevant
 Qt packages are `qt6-base`, `qt6-declarative`, `qt6-multimedia`, and
 `qt6-multimedia-ffmpeg`. Tests also use Python 3 and Qt Test. `make install` uses `xdg-mime`
-(xdg-utils) and `update-mime-database` (shared-mime-info).
+(xdg-utils), `update-mime-database` (shared-mime-info), and `update-desktop-database`
+(desktop-file-utils).
 
 ```sh
 make
@@ -58,8 +59,8 @@ where nap is still selected. Manually edited rules are kept as a backup.
 
 nap's own file types are part of this. [`nap-mime.xml`](nap-mime.xml) defines
 `application/x-nap-tape` (`*.tape`) and `application/x-nap-jcard` (`*.jcard`); the installer links
-it into `~/.local/share/mime/packages` and runs `update-mime-database`, so a file manager opens
-mixtapes and J-cards with nap. A `.tape` is declared a kind of tar, so archive tools still offer to
+it into `~/.local/share/mime/packages`, then runs `update-mime-database` and
+`update-desktop-database`, so a file manager knows what a `.tape` is and that nap opens it. A `.tape` is declared a kind of tar, so archive tools still offer to
 open it. Selecting several audio files and opening them with nap lines them up as one tape.
 Uninstall removes the definitions again.
 

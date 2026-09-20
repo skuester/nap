@@ -43,8 +43,9 @@ pub fn prefix() -> PathBuf {
 pub trait MimeBackend {
     fn current(&self, mime: &str) -> Result<String, String>;
     fn set(&self, mime: &str, handler: &str) -> Result<(), String>;
-    /// Rebuild the MIME database in `mime_dir` after its packages change.
-    fn refresh(&self, mime_dir: &Path) -> Result<(), String>;
+    /// Rebuild the desktop's caches under `share` (a prefix's `share` directory) after nap's type
+    /// definitions or desktop entry change: what a `.tape` is, and that nap opens one.
+    fn refresh(&self, share: &Path) -> Result<(), String>;
 }
 
 pub struct XdgMime {
@@ -53,10 +54,23 @@ pub struct XdgMime {
     pub program: PathBuf,
     /// Likewise the `update-mime-database`.
     pub database_program: PathBuf,
+    /// And the `update-desktop-database`, which file managers rely on to know what nap opens.
+    pub desktop_database_program: PathBuf,
+}
+
+fn rebuild(program: &Path, directory: &Path) -> Result<(), String> {
+    let name = program.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    let status = Command::new(program).arg(directory).status().map_err(|e| format!("{name}: {e}"))?;
+    if status.success() { Ok(()) } else { Err(format!("{name} failed")) }
 }
 impl XdgMime {
     pub fn new(config: PathBuf) -> Self {
-        XdgMime { config, program: "xdg-mime".into(), database_program: "update-mime-database".into() }
+        XdgMime {
+            config,
+            program: "xdg-mime".into(),
+            database_program: "update-mime-database".into(),
+            desktop_database_program: "update-desktop-database".into(),
+        }
     }
 
     /// Forget the default for `mime`: xdg-mime has no command for it, so edit `mimeapps.list`.
@@ -85,12 +99,9 @@ impl MimeBackend for XdgMime {
             Command::new(&self.program).args(["default", handler, mime]).status().map_err(|e| e.to_string())?;
         if status.success() { Ok(()) } else { Err(format!("xdg-mime failed for {mime}")) }
     }
-    fn refresh(&self, mime_dir: &Path) -> Result<(), String> {
-        let status = Command::new(&self.database_program)
-            .arg(mime_dir)
-            .status()
-            .map_err(|e| format!("update-mime-database: {e}"))?;
-        if status.success() { Ok(()) } else { Err("update-mime-database failed".into()) }
+    fn refresh(&self, share: &Path) -> Result<(), String> {
+        rebuild(&self.database_program, &share.join("mime"))?;
+        rebuild(&self.desktop_database_program, &share.join("applications"))
     }
 }
 
@@ -127,22 +138,29 @@ pub fn install_mimes(backend: &impl MimeBackend, file: &Path) -> Result<(), Stri
     let mut previous = read_previous(file)?;
     for &mime in MIME_TYPES {
         let current = backend.current(mime)?;
-        if current == DESKTOP {
-            continue;
+        if current != DESKTOP {
+            previous.insert(mime.into(), current);
+            // Persist each displaced default before mutating it, including partial failures.
+            save_previous(file, &previous)?;
         }
-        previous.insert(mime.into(), current);
-        // Persist each displaced default before mutating it, including partial failures.
-        save_previous(file, &previous)?;
+        // Always write the choice down. A query can answer "nap" from the desktop entry alone, with
+        // nothing recorded, and file managers that read the record would then pick something else.
         backend.set(mime, DESKTOP)?;
     }
     Ok(())
 }
+/// Hand `mime` to `handler` (or to nobody, when that is empty) if nap is still what opens it.
+fn release(backend: &impl MimeBackend, mime: &str, handler: &str) -> Result<(), String> {
+    if backend.current(mime)? == DESKTOP { backend.set(mime, handler) } else { Ok(()) }
+}
+
 pub fn uninstall_mimes(backend: &impl MimeBackend, file: &Path) -> Result<(), String> {
-    let previous = read_previous(file)?;
-    for (mime, handler) in previous {
-        if backend.current(&mime)? == DESKTOP {
-            backend.set(&mime, &handler)?;
-        }
+    for (mime, handler) in read_previous(file)? {
+        release(backend, &mime, &handler)?;
+    }
+    // nap's own types had no handler before nap, so there is nothing to restore: just forget them.
+    for mime in MIME_TYPES.iter().filter(|mime| !mime.starts_with("audio/")) {
+        release(backend, mime, "")?;
     }
     if file.exists() {
         fs::remove_file(file).map_err(|e| e.to_string())?;
@@ -185,7 +203,7 @@ pub fn install_desktop(
     symlink(&checkout.join("nap.desktop"), &prefix.join("share/applications/nap.desktop"))?;
     // The desktop must know what a .tape is before nap can become its default.
     symlink(&checkout.join("nap-mime.xml"), &prefix.join(MIME_PACKAGE))?;
-    backend.refresh(&prefix.join("share/mime"))?;
+    backend.refresh(&prefix.join("share"))?;
     install_mimes(backend, &state.join("nap/previous-audio-handlers.json"))
 }
 pub fn uninstall_desktop(prefix: &Path, config: &Path, state: &Path, backend: &impl MimeBackend) -> Result<(), String> {
@@ -199,7 +217,7 @@ pub fn uninstall_desktop(prefix: &Path, config: &Path, state: &Path, backend: &i
         }
     }
     // Forget the types too, but only if this prefix ever defined them.
-    if defined { backend.refresh(&prefix.join("share/mime")) } else { Ok(()) }
+    if defined { backend.refresh(&prefix.join("share")) } else { Ok(()) }
 }
 
 pub fn reload_hyprland() -> Result<(), String> {

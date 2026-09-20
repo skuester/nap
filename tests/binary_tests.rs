@@ -20,7 +20,7 @@ impl Sandbox {
         for dir in ["bin", "config/hypr", "state", "prefix"] {
             fs::create_dir_all(sandbox.path(dir)).unwrap();
         }
-        for tool in ["bin/xdg-mime", "bin/update-mime-database"] {
+        for tool in ["bin/xdg-mime", "bin/update-mime-database", "bin/update-desktop-database"] {
             let tool = sandbox.path(tool);
             fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
             fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
