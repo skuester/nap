@@ -294,3 +294,36 @@ fn the_deck_edits_saves_and_reloads_a_tape() {
         .filter(|e| e.file_name().to_string_lossy().starts_with(&mine));
     assert_eq!(leftovers.count(), 0, "a failed import removes its scratch space");
 }
+
+#[test]
+fn unsaved_work_is_given_up_only_by_asking_twice() {
+    use nap::session::{SECOND_THOUGHTS, Session};
+    use std::time::{Duration, Instant};
+    let temp = tempfile::tempdir().unwrap();
+    let track = copy(temp.path(), "silence.flac", "a.flac");
+    let mut session = Session::default();
+    let now = Instant::now();
+    let allowed = |verdict: Value| verdict["allowed"] == true;
+    // A tape with nothing unsaved is never in the way.
+    session.load(&json!({"paths": [track]})).unwrap();
+    assert!(allowed(session.may_discard("open", now)));
+    session.edit(&json!({"action": "name", "text": "Keep me"})).unwrap();
+
+    let refused = session.may_discard("open", now);
+    assert_eq!(refused["allowed"], false);
+    assert_eq!(refused["notice"], "This tape is unsaved. Open again to discard it, or press REC to save it.");
+    assert!(allowed(session.may_discard("open", now + Duration::from_secs(2))), "asked again, soon");
+    // The warning is spent: the next request starts over, and a slow second ask does not count.
+    assert!(!allowed(session.may_discard("open", now + Duration::from_secs(3))));
+    assert!(!allowed(
+        session.may_discard("open", now + Duration::from_secs(3) + SECOND_THOUGHTS + Duration::from_millis(1))
+    ));
+    // Asking for something else is not asking twice.
+    let quit = session.may_discard("quit", now + Duration::from_secs(20));
+    assert_eq!(quit["notice"], "This tape is unsaved. Quit again to discard it, or press REC to save it.");
+    assert!(!allowed(session.may_discard("open", now + Duration::from_secs(21))));
+    assert!(allowed(session.may_discard("open", now + Duration::from_secs(22))));
+
+    let mut app = App::default();
+    assert_eq!(ask(&mut app, json!({"op":"discard", "action":"quit"}))["allowed"], true);
+}

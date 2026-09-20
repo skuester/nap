@@ -256,6 +256,15 @@ private slots:
         // While it fades away it is still the note that shows, never a flash of the cover.
         QCOMPARE(card->property("lifting").toString(), QString("note"));
         QTest::qWait(50); QVERIFY(w->grabWindow().save("build/mixtape-preview.png"));
+        // Unsaved, the OPEN key records instead, and throwing the tape away has to be asked twice.
+        QVERIFY(p.tape()["dirty"].toBool());
+        auto *openKey = w->findChild<QQuickItem *>("openKey"); QVERIFY(openKey);
+        QCOMPARE(openKey->property("caption").toString(), QString("REC"));
+        QSignalSpy refusals(&p, &Player::notice);
+        p.load({audio}); QCOMPARE(p.tape()["tracks"].toList().size(), 2);
+        QVERIFY(refusals.last()[0].toString().startsWith("This tape is unsaved. Open again"));
+        QVERIFY(!p.mayQuit()); QVERIFY(refusals.last()[0].toString().startsWith("This tape is unsaved. Quit again"));
+        QVERIFY(p.mayQuit());
         // A row's x appears under the pointer and stays put while the pointer moves onto it.
         p.openUrls({QUrl::fromLocalFile(flip)}, true); QCOMPARE(p.tape()["tracks"].toList().size(), 3);
         QQuickItem *cross = nullptr;

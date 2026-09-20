@@ -65,6 +65,8 @@ public:
     Q_INVOKABLE void noteTape(const QString &note) { writeOnTape("note", note); }
     Q_INVOKABLE void setCover(const QUrl &image);
     Q_INVOKABLE void exportTape(const QUrl &destination);
+    // False, with a notice, the first time quitting would discard an unsaved tape.
+    Q_INVOKABLE bool mayQuit() { return mayDiscard("quit"); }
     Q_INVOKABLE QVariantMap insertOf(int index);
     Q_INVOKABLE void toggle();
     Q_INVOKABLE void stop();
@@ -89,6 +91,7 @@ signals:
 private:
     void drive(const char *event, bool waiting = false);
     void search(bool forward);
+    bool mayDiscard(const char *action);
     void cue(const QJsonObject &landed, bool play);
     void edit(QJsonObject request);
     void writeOnTape(const char *field, const QString &text) { edit({{"op", "edit"}, {"action", field}, {"text", text}}); }

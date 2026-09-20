@@ -105,7 +105,9 @@ fn corrupt_bookmarks_are_ignored() {
 fn theme_validates_colors_and_prefers_state_directory() {
     assert!(Rgb::parse("#abcdzz").is_none());
     assert!(Rgb::parse("#fff").is_none());
-    let t = Theme::parse("background = \"#123456\"\naccent = \"bad\"\n");
+    let t = Theme::parse("background = \"#123456\"\naccent = \"bad\"\ncolor1 = \"#c24f57\"\n");
+    assert_eq!(t.red.to_css(), "#c24f57");
+    assert_eq!(Theme::parse("").red, Theme::default().red);
     assert_eq!(t.background.to_css(), "#123456");
     assert_eq!(t.accent, Theme::default().accent);
     let temp = tempfile::tempdir().unwrap();

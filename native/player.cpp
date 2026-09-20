@@ -113,7 +113,14 @@ void Player::openUrls(const QList<QUrl> &urls, bool append) {
     if (!append) { load(paths); return; }
     edit({{"op", "load"}, {"append", true}, {"paths", QJsonArray::fromStringList(paths)}});
 }
+// Unsaved work is given up only by asking twice; the core keeps count.
+bool Player::mayDiscard(const char *action) {
+    const auto verdict = core.request({{"op", "discard"}, {"action", action}});
+    if (!verdict["allowed"].toBool()) emit notice(verdict["notice"].toString());
+    return verdict["allowed"].toBool();
+}
 void Player::load(const QStringList &paths, bool paused, qint64 start, bool ignore) {
+    if (!mayDiscard("open")) return;
     const auto result = core.request({{"op", "load"}, {"paths", QJsonArray::fromStringList(paths)}});
     if (result.contains("error")) { emit notice(result["error"].toString()); return; }
     startPaused = paused; pending = start; skipBookmark = ignore;

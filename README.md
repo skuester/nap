@@ -150,6 +150,10 @@ the note ever lands quite straight; a click beside them or Esc puts them back.
 ![the note that came with the tape](docs/note.png)
 
 Ctrl+S saves the tape, and the display between the reels becomes the progress bar while it packs.
+While a tape has unsaved changes the OPEN key becomes a red REC key that does the same, since
+OPEN is what would throw the tape away. Opening something else, or quitting, then has to be asked
+twice: the first time nap only says the tape is unsaved; doing it again within a few seconds
+discards it.
 
 - **`Name.tape`** is self-contained: a plain, uncompressed tar of one folder holding the index,
   the optional cover, and the audio. `tar -xf Name.tape` gets everything back out, and nap opens
@@ -184,7 +188,7 @@ belong to single files, so tracks on a tape always start at their beginning.
 
 ## Omarchy
 
-nap reads `background`, `foreground`, and `accent` from the active theme's
+nap reads `background`, `foreground`, `accent`, and `color1` (its red, for REC) from the active theme's
 `colors.toml`, checking `$XDG_STATE_HOME/omarchy/current/theme` first, then
 `$XDG_CONFIG_HOME/omarchy/current/theme` (with standard home-directory defaults).
 Every surface is mixed from those three colors, so the deck follows light and dark

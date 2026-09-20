@@ -15,6 +15,8 @@ ApplicationWindow {
     readonly property color bg: deck.palette.background
     readonly property color fg: deck.palette.foreground
     readonly property color accent: deck.palette.accent
+    // The one colour that is not mixed: a deck's REC is red, so it is the theme's own red.
+    readonly property color red: deck.palette.red
     readonly property bool dark: lum(bg) < 0.4
     readonly property color shell: Qt.tint(bg, Qt.alpha(fg, 0.07))
     readonly property color well: dark ? Qt.darker(bg, 1.7) : Qt.darker(bg, 1.2)
@@ -58,6 +60,7 @@ ApplicationWindow {
         return (s >= 3600 ? Math.floor(s / 3600) + ":" : "") + (s >= 3600 ? String(Math.floor(s / 60) % 60).padStart(2, "0") : String(Math.floor(s / 60)).padStart(2, "0")) + ":" + String(s % 60).padStart(2, "0")
     }
     function open() { picker.open() }
+    onClosing: close => close.accepted = deck.mayQuit()
     Shortcut { enabled: !win.typing; sequence: "Space"; onActivated: deck.toggle() }
     Shortcut { enabled: !win.typing; sequence: "S"; onActivated: deck.stop() }
     Shortcut { enabled: !win.typing; sequences: [",", "<"]; onActivated: deck.previous() }
@@ -79,7 +82,7 @@ ApplicationWindow {
     Shortcut { enabled: !win.typing; sequence: "M"; onActivated: deck.toggleMute() }
     Shortcut { enabled: !win.typing; sequence: "O"; onActivated: win.open() }
     Shortcut { enabled: !win.typing; sequence: "Ctrl+O"; onActivated: win.open() }
-    Shortcut { enabled: !win.typing; sequence: "Q"; onActivated: Qt.quit() }
+    Shortcut { enabled: !win.typing; sequence: "Q"; onActivated: if (deck.mayQuit()) Qt.quit() }
     Shortcut { enabled: !win.typing; sequence: "?"; onActivated: win.helpVisible = !win.helpVisible }
     Shortcut { enabled: !win.typing; sequence: "K"; onActivated: win.helpVisible = !win.helpVisible }
     Shortcut { enabled: !win.typing; sequence: "Escape"; onActivated: { if (win.helpVisible) win.helpVisible = false; else if (jcard.zoomed) jcard.putBack(); else win.showInsert(false) } }
@@ -260,7 +263,8 @@ ApplicationWindow {
             Transport { objectName: "playKey"; glyph: deck.playing ? "pause" : "play"; caption: deck.playing ? "PAUSE" : "PLAY"; ink: deck.stopped ? fg : accentInk; face: deck.stopped ? shell : accent; well: win.well; engaged: deck.playing; onClicked: deck.loaded ? deck.toggle() : win.open() }
             Transport { id: forwardKey; objectName: "forwardKey"; glyph: deck.stopped || win.trackKeys ? "next" : "fwd"; caption: deck.stopped || win.trackKeys ? "NEXT" : "FWD"; seekDirection: deck.stopped ? 0 : 1; trackSearch: win.trackKeys; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onWind: seconds => deck.skip(seconds); onClicked: if ((deck.stopped || win.trackKeys) && !wound) deck.next() }
             Transport { glyph: "stop"; caption: "STOP"; ink: fg; face: shell; well: win.well; enabled: deck.loaded; onClicked: deck.stop() }
-            Transport { glyph: "open"; caption: "OPEN"; ink: fg; face: shell; well: win.well; onClicked: win.open() }
+            // OPEN is what would throw an unsaved tape away, so until it is saved this key records it instead.
+            Transport { objectName: "openKey"; glyph: win.tape.dirty ? "rec" : "open"; caption: win.tape.dirty ? "REC" : "OPEN"; ink: win.tape.dirty ? win.red : fg; face: shell; well: win.well; onClicked: win.tape.dirty ? saver.open() : win.open() }
         }
         Row {
             x: 524; y: 410; spacing: 6
@@ -313,7 +317,7 @@ ApplicationWindow {
                     Text { text: modelData[1]; font.family: mono; font.pixelSize: 12; color: fg }
                 }
             }
-            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. On a tape they are always PREV and NEXT: tap to change track, hold to wind. Drag or scroll the grooves under the tape to set the volume. Click the label's title strip to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
+            Text { topPadding: 8; width: parent.width; wrapMode: Text.Wrap; text: "Drag the ruled line on the label to seek. Tap REW or FWD to jump five seconds, or hold to wind; after STOP they become PREV and NEXT. On a tape they are always PREV and NEXT: tap to change track, hold to wind. While a tape has unsaved changes OPEN becomes REC, which saves it; opening something else or quitting then has to be asked twice. Drag or scroll the grooves under the tape to set the volume. Click the label's title strip to read the tape's insert, or the display between the reels to change it. Drop audio onto the open insert to build a mixtape: drag rows to reorder, double-click to play, and double-click its name to retitle it."; color: dim; font.family: mono; font.pixelSize: 11; lineHeight: 1.45 }
             Text { text: "Esc or a click closes this."; color: dim; font.family: mono; font.pixelSize: 11 }
         }
     }

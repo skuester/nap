@@ -10,6 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+/// How long a warning about unsaved work waits for the same thing to be asked again.
+pub const SECOND_THOUGHTS: Duration = Duration::from_secs(6);
 
 enum Outcome {
     Imported(Tape, PathBuf),
@@ -31,6 +35,8 @@ pub struct Session {
     scratch: Option<PathBuf>,
     job: Option<Job>,
     briefs: HashMap<PathBuf, (String, String, u64)>,
+    /// What was last refused because the tape is unsaved, and when.
+    warned: Option<(String, Instant)>,
 }
 
 fn paths(request: &Value) -> Vec<PathBuf> {
@@ -208,6 +214,22 @@ impl Session {
         };
         self.dirty = true;
         Ok(json!({"replaced": replaced, "path": self.current()}))
+    }
+
+    /// Whether `action` ("open" or "quit") may throw the tape away. Unsaved work is given up only
+    /// by asking twice: the first time is refused with a notice, the same request soon after goes
+    /// through. No dialog to answer, and nothing lost to one stray key.
+    pub fn may_discard(&mut self, action: &str, now: Instant) -> Value {
+        let asked_twice = self
+            .warned
+            .take()
+            .is_some_and(|(what, when)| what == action && now.duration_since(when) <= SECOND_THOUGHTS);
+        if !self.dirty || asked_twice {
+            return json!({"allowed": true, "notice": ""});
+        }
+        self.warned = Some((action.to_owned(), now));
+        let again = if action == "quit" { "Quit" } else { "Open" };
+        json!({"allowed": false, "notice": format!("This tape is unsaved. {again} again to discard it, or press REC to save it.")})
     }
 
     /// PREV or NEXT: move to the track it finds.

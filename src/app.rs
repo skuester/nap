@@ -108,13 +108,14 @@ impl App {
             "track" => Ok(session.search(flag(request, "forward"), number(request, "position"))),
             "select" => session.select(number(request, "index").max(0) as usize),
             "ended" => Ok(session.ended(flag(request, "looping"))),
+            "discard" => Ok(session.may_discard(request["action"].as_str().unwrap_or(""), std::time::Instant::now())),
             _ => return None,
         })
     }
 
     fn theme() -> Value {
         let t = Theme::load_omarchy();
-        json!({"background": t.background.to_css(), "foreground": t.foreground.to_css(), "accent": t.accent.to_css()})
+        json!({"background": t.background.to_css(), "foreground": t.foreground.to_css(), "accent": t.accent.to_css(), "red": t.red.to_css()})
     }
 
     pub fn dispatch(&mut self, request: &Value) -> Result<Value, String> {

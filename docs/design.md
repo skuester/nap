@@ -27,6 +27,7 @@ was this, on a real tape?":
 | Level meters | VU needles on paper dials; a deck's LED ladder and rolling tape counter |
 | Stop vs. pause | The head lifting off the tape; REW/FWD then become track search |
 | Skipping tracks on a tape | A CD player's keys: tap to change track, hold to wind |
+| Saving an unsaved tape | The red REC key, taking OPEN's place because OPEN is what would discard it |
 | A progress bar | The deck's own display, in the same 4px cells as the visualizers |
 | Tape length | The "C-60" class printed on every blank tape, computed from the real length |
 
@@ -62,7 +63,10 @@ Two rules fall out of this, and both were learned the hard way:
   ink. On paper, information is always `ink`/`inkDim`, never the accent, because accent-on-paper
   contrast is unpredictable across themes.
 
-Icons (`icons/*.svg`) are the one exception: they cannot follow the theme, so they use the warm
+There is one unmixed colour: `red`, the theme's own `color1`, used only for the REC key, because on
+a deck that is the one thing that is always red. Do not reach for it elsewhere.
+
+Icons (`icons/*.svg`) are the other exception: they cannot follow the theme, so they use the warm
 palette from the README screenshots.
 
 ## Type
@@ -122,6 +126,13 @@ All scenes share a grammar so they feel like one instrument:
   sample-peak meter sat pinned at the top and looked dead until it followed short-term level on a
   deck-style scale instead. Measure a real file before choosing a scale.
 - Analysis lives in Rust; ballistics (decay, hang, spring) live in QML.
+
+## Protecting work without dialogs
+
+nap has no modal dialogs of its own. Unsaved work is protected two ways instead: the dangerous
+control turns into the safe one (OPEN becomes REC while a tape is unsaved), and anything that
+would still discard the tape must be asked twice (the first attempt only explains, in a notice;
+the same attempt within a few seconds goes through). Reach for that pattern before a dialog.
 
 ## Writing on things
 

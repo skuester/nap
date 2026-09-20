@@ -38,6 +38,8 @@ pub struct Theme {
     pub light_foreground: Rgb,
     pub accent: Rgb,
     pub muted: Rgb,
+    /// The theme's red (`color1`), for the one thing on a deck that is always red: REC.
+    pub red: Rgb,
 }
 
 impl Default for Theme {
@@ -49,6 +51,7 @@ impl Default for Theme {
             light_foreground: Rgb::new(0xba, 0xc2, 0xde),
             accent: Rgb::new(0x89, 0xb4, 0xfa),
             muted: Rgb::new(0x58, 0x5b, 0x70),
+            red: Rgb::new(0xf3, 0x8b, 0xa8),
         }
     }
 }
@@ -69,6 +72,7 @@ impl Theme {
                 "light_foreground" => t.light_foreground = rgb,
                 "accent" => t.accent = rgb,
                 "muted" => t.muted = rgb,
+                "color1" => t.red = rgb,
                 _ => {}
             }
         }
