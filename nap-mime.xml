@@ -5,14 +5,15 @@
     <comment>nap mixtape</comment>
     <!-- A plain tar of one folder: index, cover, and audio. Archive tools can still open it. -->
     <sub-class-of type="application/x-tar"/>
-    <!-- Drawn in icons/application-x-nap-tape.svg; the generic one is for themes without it. -->
-    <generic-icon name="audio-x-generic"/>
+    <!-- Toolkits search theme by theme, so a generic icon the user's theme has (audio-x-generic,
+         say) would beat our own in hicolor. Naming ours as the generic leaves nothing to outrank it. -->
+    <generic-icon name="application-x-nap-tape"/>
     <glob pattern="*.tape"/>
   </mime-type>
   <mime-type type="application/x-nap-jcard">
     <comment>nap J-card track listing</comment>
     <sub-class-of type="text/plain"/>
-    <generic-icon name="audio-x-generic"/>
+    <generic-icon name="application-x-nap-jcard"/>
     <glob pattern="*.jcard"/>
   </mime-type>
 </mime-info>

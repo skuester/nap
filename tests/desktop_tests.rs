@@ -125,6 +125,9 @@ fn registry_matches_desktop_and_rules_preserve_aspect() {
     let package = include_str!("../nap-mime.xml");
     for mime in MIME_TYPES.iter().filter(|mime| !mime.starts_with("audio/")) {
         assert!(package.contains(&format!("<mime-type type=\"{mime}\">")), "{mime}");
+        // Its generic icon is its own: a theme's audio-x-generic would otherwise outrank our icon,
+        // which lives in hicolor, because toolkits search theme by theme before name by name.
+        assert!(package.contains(&format!("<generic-icon name=\"{}\"/>", mime.replace('/', "-"))), "{mime}");
     }
     assert!(package.contains("<glob pattern=\"*.tape\"/>") && package.contains("<glob pattern=\"*.jcard\"/>"));
     assert!(desktop.contains("Exec=nap %F"), "several selected files open as one tape");
